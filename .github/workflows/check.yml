@@ -11,14 +11,25 @@ permissions:
 
 jobs:
   check:
-    name: Java 21 and Go 1.24.4 / make check
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: ${{ matrix.os }} / Java 21 and Go 1.24.4 / make check
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           lfs: true
+
+      - name: Install GNU shell utilities on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash coreutils flock
+          echo "/opt/homebrew/opt/coreutils/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
 
       - name: Set up Java 21
         uses: actions/setup-java@v6.1.0

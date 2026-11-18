@@ -2,6 +2,17 @@
 # WHY: Keeps the catalog digest stable in generated transcripts by checking repeated Maven packaging.
 set -euo pipefail
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -- "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -- "$1" | awk '{print $1}'
+  else
+    echo "sha256sum or shasum executable is missing" >&2
+    return 2
+  fi
+}
+
 main() {
   repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
   cd -- "$repo_root"
@@ -24,8 +35,8 @@ main() {
   else
     jar=$(command -v jar || true)
   fi
-  if [[ ! -x $maven || -z $jar || ! -x $jar ]] || ! command -v sha256sum >/dev/null; then
-    echo "Maven, jar, or sha256sum executable is missing" >&2
+  if [[ ! -x $maven || -z $jar || ! -x $jar ]] || { ! command -v sha256sum >/dev/null && ! command -v shasum >/dev/null; }; then
+    echo "Maven, jar, or sha256sum/shasum executable is missing" >&2
     exit 2
   fi
   read -r -a maven_options <<<"$maven_args"
@@ -35,10 +46,10 @@ main() {
   manifest_dir=$(mktemp -d)
   trap 'rm -rf -- "$manifest_dir"' EXIT
   "$maven" "${maven_options[@]}" -f "$pom" clean package -DskipTests
-  read -r first_digest _ < <(sha256sum -- "$archive")
+  first_digest=$(sha256_file "$archive")
   sleep 2
   "$maven" "${maven_options[@]}" -f "$pom" clean package -DskipTests
-  read -r second_digest _ < <(sha256sum -- "$archive")
+  second_digest=$(sha256_file "$archive")
 
   (cd -- "$manifest_dir" && "$jar" -xf "$archive" META-INF/MANIFEST.MF)
   if grep -Eq '^Build-Jdk(-Spec)?:' "$manifest_dir/META-INF/MANIFEST.MF"; then

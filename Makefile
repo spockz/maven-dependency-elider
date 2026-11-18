@@ -126,7 +126,7 @@ profile-spring-boot: ## Profile example-spring-boot-app elision + trimming with 
 	mkdir -p "$(dir $(SPRING_BOOT_PROFILE_OUTPUT))"
 	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests -Djacoco.skip=true
 	$(MAVEN) $(MAVEN_ARGS) -f examples/logback-vulnerability-mapping-catalog/pom.xml install -DskipTests
-	trace_file="$$(mktemp --suffix=.log)"; \
+	trace_file="$$(mktemp)"; \
 	trap 'rm -f "$$trace_file"' EXIT; \
 	printf 'io.github.spockz.example.springboot.ExampleApplication\norg.springframework.boot.SpringApplication\n' > "$$trace_file"; \
 	MAVEN_OPTS="$${MAVEN_OPTS:-} -XX:StartFlightRecording=filename=$(abspath $(SPRING_BOOT_PROFILE_OUTPUT)),settings=profile,dumponexit=true" \
@@ -161,7 +161,7 @@ scan-sbom: test-examples ## Compare baseline and post-elision SBOM findings for 
 
 site: ## Build the Maven plugin documentation site locally
 	./scripts/generate-site-index.sh
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -am compile site -DskipTests
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -am package site -DskipTests -Djacoco.skip=true
 
 serve: site ## Build the documentation site and serve it using Caddy
 	command -v caddy >/dev/null 2>&1 || { echo "Error: caddy is not installed or not in PATH. Please install Caddy: https://caddyserver.com" >&2; exit 1; }

@@ -116,7 +116,8 @@ final class MavenBanRetainedBytecodeClosureTest {
     final NativeImageScanContext scanContext =
         NativeImageScanContext.create(scanCandidates, temporaryDirectory);
     final Map<Path, DependencyDynamicRoots.RootScan> scans = new ConcurrentHashMap<>();
-    scans.put(jarPath, DependencyDynamicRoots.scan(jarPath, scanContext));
+    final Path realJarPath = scanCandidates.getFirst().filePath();
+    scans.put(realJarPath, DependencyDynamicRoots.scan(realJarPath, scanContext));
     final DynamicRootInputs dynamicRoots =
         new DynamicRootInputs(
             Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), scans, Map.of(), Set.of(), List.of());

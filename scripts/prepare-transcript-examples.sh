@@ -44,7 +44,11 @@ main() {
     exit 2
   fi
   mkdir -p -- "$local_repository"
-  cp -a --reflink=auto -- "$local_repository_source/." "$local_repository/"
+  if cp --help 2>&1 | grep -q -- '--reflink'; then
+    cp -a --reflink=auto -- "$local_repository_source/." "$local_repository/"
+  else
+    cp -a -- "$local_repository_source/." "$local_repository/"
+  fi
   maven_options+=("-Dmaven.repo.local=$local_repository")
   active_process_pid=""
   cleanup() {
