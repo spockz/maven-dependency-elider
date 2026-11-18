@@ -93,9 +93,15 @@ final class MavenBanRetainedBytecodeClosure {
       final TrimAnalysisResult trimAnalysis,
       final ProductionBytecodeReferenceScanner scanner)
       throws IOException {
+    if (!prepared.options().trim().enabled()) {
+      return scanner.scanArchive(snapshot.filePath());
+    }
+    final Set<String> liveProgramClasses = trimAnalysis.liveProgramClasses().get(coordinate);
+    if (liveProgramClasses != null) {
+      return scanner.scanArchive(snapshot.filePath(), liveProgramClasses);
+    }
     final boolean scanEveryClass =
-        !prepared.options().trim().enabled()
-            || forcedUnchanged.contains(coordinate)
+        forcedUnchanged.contains(coordinate)
             || passThrough.contains(TrimPassThroughPlanner.artifactIdentity(coordinate))
             || candidateAnalysis == null;
     if (scanEveryClass) {

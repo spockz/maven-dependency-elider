@@ -61,7 +61,8 @@ final class TierAnalysisResultBuilder {
             inventory.tiers(),
             inventory.platformSnapshots(),
             upperClasses)
-        .withPassThroughIdentities(passThroughIdentities);
+        .withPassThroughIdentities(passThroughIdentities)
+        .withLiveProgramClasses(closure.liveProgramClasses());
   }
 
   private static Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> mutableAnalyses(

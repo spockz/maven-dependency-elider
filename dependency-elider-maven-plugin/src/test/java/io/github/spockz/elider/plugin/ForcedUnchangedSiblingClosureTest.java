@@ -175,6 +175,75 @@ final class ForcedUnchangedSiblingClosureTest {
     assertPromotedClosure(fixture);
   }
 
+  @Test
+  void deadClassInForcedUnchangedJarDoesNotRetainDeadCandidateClass() throws Exception {
+    final Artifact first = artifact("first", Map.of(FIRST, classBytes(FIRST, null, OWNER)));
+    final Artifact unchanged =
+        artifact(
+            "unchanged",
+            Map.of(
+                OWNER,
+                classBytes(OWNER, null, LINKED),
+                "unchanged/DeadOptional",
+                classBytes("unchanged/DeadOptional", null, "candidate/DeadLinked")));
+    final Artifact candidate =
+        artifact(
+            "candidate",
+            Map.of(
+                LINKED,
+                classBytes(LINKED, null, null),
+                "candidate/DeadLinked",
+                classBytes("candidate/DeadLinked", null, null)));
+    final MavenProject project = new MavenProject();
+    project.setGroupId("example");
+    project.setArtifactId("consumer");
+    project.setVersion("1.0");
+    project.setArtifacts(Set.of(first, unchanged, candidate));
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("target").toString());
+    project.setBuild(build);
+    final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots =
+        MavenArtifactInventory.snapshots(List.of(first, unchanged, candidate));
+    final List<ArtifactFileRef> refs = new java.util.ArrayList<>();
+    final Map<Path, DependencyDynamicRoots.RootScan> scans =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    final DependencyDynamicRoots.RootScan emptyScan =
+        new DependencyDynamicRoots.RootScan(Set.of(), true);
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
+      refs.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
+      scans.put(snapshot.filePath(), emptyScan);
+    }
+    final Set<ArtifactCoordinate> retained =
+        Set.of(coordinate("first"), coordinate("unchanged"), coordinate("candidate"));
+    final TrimRequest request =
+        new TrimRequest(
+            project,
+            null,
+            snapshots,
+            new TrimScanInputs(new JarIndexScanner().scan(refs), scans),
+            retained,
+            new TrimEvidence(
+                TraceData.of(Set.of(FIRST.replace('/', '.'))), Set.of(), Set.of(), Set.of()),
+            new TrimPolicy(
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+                true,
+                true,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                DuplicateClassPolicy.NONE));
+    final TrimAnalysisResult result =
+        MultiReleaseJarTrimmer.analyzeInMemory(request, Map.of(), Set.of(coordinate("unchanged")));
+    final Set<String> retainedCandidateClasses =
+        result.candidateAnalyses().get(coordinate("candidate")).retainedClasses();
+    assertAll(
+        () -> assertThat(retainedCandidateClasses).contains(LINKED),
+        () -> assertThat(retainedCandidateClasses).doesNotContain("candidate/DeadLinked"));
+  }
+
   private static void assertReachedDroppedSibling(final Fixture fixture)
       throws IOException, MojoFailureException {
     final TrimAnalysisResult result = fixture.analyze();

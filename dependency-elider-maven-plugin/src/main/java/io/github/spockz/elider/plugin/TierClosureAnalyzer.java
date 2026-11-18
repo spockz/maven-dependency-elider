@@ -37,27 +37,47 @@ final class TierClosureAnalyzer {
       throws IOException {
     final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> targetAnalyses =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
+    final Map<ArtifactCoordinate, Set<String>> liveProgramClasses =
+        LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
+    roots
+        .programRoots()
+        .keySet()
+        .forEach(program -> liveProgramClasses.put(program.coordinate(), new TreeSet<>()));
     int analysisRuns = 0;
     boolean changed;
     do {
+      for (final Set<String> liveClasses : liveProgramClasses.values()) {
+        liveClasses.clear();
+      }
       final ClosureIteration iteration =
-          analyzeIteration(contexts, roots, candidates, targetAnalyses);
+          analyzeIteration(contexts, roots, candidates, targetAnalyses, liveProgramClasses);
       changed = iteration.rootsChanged();
       analysisRuns += iteration.analysisRuns();
     } while (changed);
-    return new ClosureResult(targetAnalyses, roots.reachableArtifacts(), analysisRuns);
+    final Map<ArtifactCoordinate, Set<String>> immutableLiveProgramClasses =
+        LinkedHashMap.newLinkedHashMap(liveProgramClasses.size());
+    for (final Map.Entry<ArtifactCoordinate, Set<String>> entry : liveProgramClasses.entrySet()) {
+      immutableLiveProgramClasses.put(entry.getKey(), Set.copyOf(entry.getValue()));
+    }
+    return new ClosureResult(
+        targetAnalyses,
+        roots.reachableArtifacts(),
+        analysisRuns,
+        Map.copyOf(immutableLiveProgramClasses));
   }
 
   private ClosureIteration analyzeIteration(
       final List<TierContext> contexts,
       final RootPlan roots,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates,
-      final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> targetAnalyses)
+      final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> targetAnalyses,
+      final Map<ArtifactCoordinate, Set<String>> liveProgramClasses)
       throws IOException {
     boolean changed = false;
     int runs = 0;
     for (final TierContext context : contexts) {
-      final ClosureIteration programs = analyzePrograms(context, candidates, roots);
+      final ClosureIteration programs =
+          analyzePrograms(context, candidates, roots, liveProgramClasses);
       changed |= programs.rootsChanged();
       runs += programs.analysisRuns();
       final ClosureIteration candidateResults =
@@ -71,7 +91,8 @@ final class TierClosureAnalyzer {
   private ClosureIteration analyzePrograms(
       final TierContext context,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates,
-      final RootPlan roots)
+      final RootPlan roots,
+      final Map<ArtifactCoordinate, Set<String>> liveProgramClasses)
       throws IOException {
     boolean changed = false;
     final List<
@@ -101,6 +122,10 @@ final class TierClosureAnalyzer {
       final ElisionAnalysisModel.ArtifactSnapshot owner = entry.getKey();
       final TierCandidate candidate = candidates.get(owner);
       final DependencyJarTrimmer.TrimAnalysis analysis = analyses.get(index);
+      final Set<String> liveClasses = liveProgramClasses.get(owner.coordinate());
+      if (liveClasses != null) {
+        liveClasses.addAll(analysis.retainedClasses());
+      }
       if (candidate != null
           && candidate.isMultiRelease()
           && context.release() > operation.targetRelease()) {
@@ -233,7 +258,8 @@ final class TierClosureAnalyzer {
   /* package */ record ClosureResult(
       Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> targetAnalyses,
       Set<ArtifactCoordinate> reachableArtifacts,
-      int analysisRuns) {}
+      int analysisRuns,
+      Map<ArtifactCoordinate, Set<String>> liveProgramClasses) {}
 
   /* package */ record ClosureIteration(boolean rootsChanged, int analysisRuns) {}
 }

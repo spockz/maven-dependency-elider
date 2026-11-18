@@ -21,7 +21,8 @@ record TrimAnalysisResult(
     List<String> platformIdentities,
     List<Integer> analyzedTiers,
     Map<ArtifactCoordinate, Set<String>> upperTierClasses,
-    Set<String> passThroughIdentities) {
+    Set<String> passThroughIdentities,
+    Map<ArtifactCoordinate, Set<String>> liveProgramClasses) {
   TrimAnalysisResult {
     candidateAnalyses = TrimRootPlanner.immutableAnalysisMap(candidateAnalyses);
     candidateRoots = TrimRootPlanner.immutableSetMap(candidateRoots);
@@ -30,6 +31,7 @@ record TrimAnalysisResult(
     analyzedTiers = analyzedTiers.stream().distinct().sorted().toList();
     upperTierClasses = TrimRootPlanner.immutableSetMap(upperTierClasses);
     passThroughIdentities = Set.copyOf(passThroughIdentities);
+    liveProgramClasses = TrimRootPlanner.immutableSetMap(liveProgramClasses);
   }
 
   /* package */ TrimAnalysisResult(
@@ -52,7 +54,8 @@ record TrimAnalysisResult(
         platformIdentities,
         analyzedTiers,
         upperTierClasses,
-        Set.of());
+        Set.of(),
+        Map.of());
   }
 
   /* package */ TrimAnalysisResult withPassThroughIdentities(
@@ -67,6 +70,23 @@ record TrimAnalysisResult(
         platformIdentities,
         analyzedTiers,
         upperTierClasses,
-        passThroughIdentities);
+        passThroughIdentities,
+        liveProgramClasses);
+  }
+
+  /* package */ TrimAnalysisResult withLiveProgramClasses(
+      final Map<ArtifactCoordinate, Set<String>> liveProgramClasses) {
+    return new TrimAnalysisResult(
+        candidateAnalyses,
+        candidateRoots,
+        reachableArtifacts,
+        analysisRuns,
+        targetRelease,
+        runtimeRelease,
+        platformIdentities,
+        analyzedTiers,
+        upperTierClasses,
+        passThroughIdentities,
+        liveProgramClasses);
   }
 }

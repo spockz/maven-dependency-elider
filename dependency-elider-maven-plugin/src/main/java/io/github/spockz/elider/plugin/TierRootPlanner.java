@@ -49,7 +49,6 @@ final class TierRootPlanner {
             .filter(
                 snapshot ->
                     TrimPassThroughPlanner.unchangedScope(snapshot.coordinate())
-                        || operation.forcedUnchanged().contains(snapshot.coordinate())
                         || retainJarOwners.contains(snapshot.coordinate()))
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots =
