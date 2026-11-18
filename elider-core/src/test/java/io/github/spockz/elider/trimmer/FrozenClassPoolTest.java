@@ -14,7 +14,7 @@ import proguard.classfile.Clazz;
 import proguard.classfile.LibraryClass;
 
 /** Covers frozen graph pool lookup, iteration, identity, and immutable membership. */
-@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.UnitTestContainsTooManyAsserts"})
+@SuppressWarnings({"PMD.AtLeastOneConstructor"})
 class FrozenClassPoolTest {
   @Test
   @DisplayName("ADR-0003: frozen lookup preserves sorted membership and class identities")

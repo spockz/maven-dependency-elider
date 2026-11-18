@@ -6,7 +6,6 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.TierArchiveProjector.TierContext;
 import io.github.spockz.elider.plugin.TierCandidatePlanner.TierCandidate;
-import io.github.spockz.elider.plugin.TierInventoryReader.MultiReleaseCandidateInfo;
 import io.github.spockz.elider.plugin.TierRootPlanner.RootPlan;
 import io.github.spockz.elider.trimmer.ClosureQueryPolicy;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
@@ -25,9 +24,16 @@ final class TierClosureAnalyzer {
   /** Immutable class-edge policy reused across the tier fixed-point passes. */
   private final ClosureQueryPolicy closureQueryPolicy;
 
+  /** Streams unchanged program JARs with ASM in conservative mode. */
+  private final UnchangedProgramClosureAnalyzer unchangedAnalyzer;
+
   /* package */ TierClosureAnalyzer(final MultiReleaseTrimContext operation) {
     this.operation = operation;
     this.closureQueryPolicy = operation.request().evidence().runtimePolicy().closureQueryPolicy();
+    this.unchangedAnalyzer =
+        this.closureQueryPolicy.mode() == ClosureQueryPolicy.Mode.CONSERVATIVE
+            ? new UnchangedProgramClosureAnalyzer(operation.request().policy().trimWorkers())
+            : null;
   }
 
   /* package */ ClosureResult analyzeToFixedPoint(
@@ -76,6 +82,12 @@ final class TierClosureAnalyzer {
     boolean changed = false;
     int runs = 0;
     for (final TierContext context : contexts) {
+      if (unchangedAnalyzer != null) {
+        final ClosureIteration unchanged =
+            unchangedAnalyzer.analyzePrograms(this, context, candidates, roots, liveProgramClasses);
+        changed |= unchanged.rootsChanged();
+        runs += unchanged.analysisRuns();
+      }
       final ClosureIteration programs =
           analyzePrograms(context, candidates, roots, liveProgramClasses);
       changed |= programs.rootsChanged();
@@ -158,11 +170,11 @@ final class TierClosureAnalyzer {
     if (context.release() <= operation.targetRelease()) {
       return context.classesOf(owner);
     }
-    final MultiReleaseCandidateInfo info = context.multiReleaseInfo(owner);
-    if (info == null) {
+    final Set<String> versioned = context.versionedClassesOf(owner);
+    if (versioned.isEmpty()) {
       return Set.of();
     }
-    final Set<String> roots = new TreeSet<>(info.versionedClasses());
+    final Set<String> roots = new TreeSet<>(versioned);
     roots.retainAll(context.classesOf(owner));
     return roots;
   }
@@ -235,7 +247,7 @@ final class TierClosureAnalyzer {
     return prepared.analyze(localRoots, queryPolicy);
   }
 
-  private boolean collectReachableClasses(
+  /* package */ boolean collectReachableClasses(
       final Set<String> reachable,
       final ElisionAnalysisModel.ArtifactSnapshot source,
       final TierContext context,

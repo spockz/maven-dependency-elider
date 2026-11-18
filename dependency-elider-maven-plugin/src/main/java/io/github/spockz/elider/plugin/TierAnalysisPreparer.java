@@ -21,6 +21,9 @@ import java.util.Set;
 
 /** Prepares isolated pools for each analyzed runtime tier. */
 final class TierAnalysisPreparer {
+  /** Owner count threshold indicating duplicate class ownership. */
+  private static final int SINGLE_OWNER = 1;
+
   /** Bounds and policy belong to this analysis operation. */
   private final MultiReleaseTrimContext operation;
 
@@ -28,7 +31,14 @@ final class TierAnalysisPreparer {
     this.operation = operation;
   }
 
-  /* package */ List<TierContext> prepareContexts(
+  /* package */ record PreparedContexts(
+      List<TierContext> contexts, List<TrimAnalysisSession> sessions) {
+    /* package */ void clearSnapshots() {
+      sessions.forEach(TrimAnalysisSession::clearSnapshots);
+    }
+  }
+
+  /* package */ PreparedContexts prepareContexts(
       final Inventory inventory,
       final List<TierContext> projections,
       final RootPlan roots,
@@ -41,7 +51,7 @@ final class TierAnalysisPreparer {
             .filter(snapshot -> !roots.candidateSet().contains(snapshot))
             .toList();
     final List<TierContext> contexts = new ArrayList<>();
-    final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
+    final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
     for (final TierContext projection : projections) {
       contexts.add(
           prepareContext(
@@ -52,9 +62,9 @@ final class TierAnalysisPreparer {
               candidates,
               skipped,
               unchangedClasses,
-              trimmer));
+              session));
     }
-    return List.copyOf(contexts);
+    return new PreparedContexts(List.copyOf(contexts), List.of(session));
   }
 
   private Set<String> skippedIdentities(final TrimPassThroughPlan plan) {
@@ -98,9 +108,8 @@ final class TierAnalysisPreparer {
       final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates,
       final Set<String> skippedIdentities,
       final Set<String> unchangedClasses,
-      final DependencyJarTrimmer trimmer)
+      final TrimAnalysisSession session)
       throws IOException {
-    final TrimAnalysisSession session = new TrimAnalysisSession(trimmer);
     final TrimAnalysisSession.SharedTierContext sharedTier =
         sharedTierContext(projection, inventory, session);
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
@@ -130,11 +139,6 @@ final class TierAnalysisPreparer {
 
   private static TrimAnalysisSession.SharedTierContext sharedTierContext(
       final TierContext projection, final Inventory inventory, final TrimAnalysisSession session) {
-    final boolean hasDuplicateOwners =
-        projection.ownersByClass().values().stream().anyMatch(owners -> owners.size() > 1);
-    if (hasDuplicateOwners) {
-      return null;
-    }
     final List<Path> tierArchives =
         inventory.snapshots().stream()
             .filter(
@@ -145,6 +149,16 @@ final class TierAnalysisPreparer {
             .filter(Objects::nonNull)
             .toList();
     return session.prepareSharedTierContext(tierArchives, projection.jdkClassTable());
+  }
+
+  private static boolean hasDuplicateClass(
+      final TierContext projection, final ElisionAnalysisModel.ArtifactSnapshot snapshot) {
+    for (final String className : projection.classesOf(snapshot)) {
+      if (projection.ownersOf(className).size() > SINGLE_OWNER) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
@@ -178,7 +192,9 @@ final class TierAnalysisPreparer {
                       operation.request().policy().mrjarStrategy());
               final boolean tolerateUnresolved =
                   !operation.request().policy().trimPassThroughOnUnresolved();
-              return sharedTier != null
+              final boolean useShared =
+                  sharedTier != null && !hasDuplicateClass(projection, snapshot);
+              return useShared
                   ? sharedTier.prepareWithUnchangedPassThroughLibraries(
                       projection.pathFor(snapshot),
                       siblings,
@@ -227,9 +243,15 @@ final class TierAnalysisPreparer {
           final TrimAnalysisSession session,
           final TrimAnalysisSession.SharedTierContext sharedTier)
           throws IOException {
+    final boolean conservative = UnchangedProgramClosureAnalyzer.supports(operation.request());
     final List<ElisionAnalysisModel.ArtifactSnapshot> preparable =
         programs.stream()
             .filter(snapshot -> !projection.classesOf(snapshot).isEmpty())
+            .filter(
+                snapshot ->
+                    !conservative
+                        || !skippedIdentities.contains(
+                            TrimPassThroughPlanner.artifactIdentity(snapshot.coordinate())))
             .sorted(TrimCandidatePlanner.artifactSnapshotOrder())
             .toList();
     final List<DependencyJarTrimmer.PreparedAnalysis> results =

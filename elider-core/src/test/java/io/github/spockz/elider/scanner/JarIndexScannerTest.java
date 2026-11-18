@@ -58,7 +58,6 @@ class JarIndexScannerTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void scansWhenClassEntryCompressedDataIsCorrupt() throws IOException {
     final Path jarPath = temporaryDirectory.resolve("corrupt-payload.jar");
     final byte[] payload = new byte[4096];
@@ -82,7 +81,7 @@ class JarIndexScannerTest {
   }
 
   @Test
-  @SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.UseConcurrentHashMap"})
+  @SuppressWarnings({"PMD.UseConcurrentHashMap"})
   void defensivelyCopiesConstructorInputsAndExposesImmutableCollections() {
     final ArtifactFileRef artifact = artifact(temporaryDirectory.resolve("unused.jar"), "unused");
     final Set<String> classes = new HashSet<>(Set.of("org.example.Original"));

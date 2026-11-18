@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 
 /** Verifies effective output bytes and cache behavior. */
 // These output scenarios share the same expensive fixture and archive helpers.
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.UnitTestContainsTooManyAsserts", "PMD.LawOfDemeter"})
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.LawOfDemeter"})
 final class MavenElisionServiceEffectiveOutputTest
     extends MavenElisionServiceEffectiveOutputSupport {
   /** Trace root shared by the retained-dependency fixture cases. */

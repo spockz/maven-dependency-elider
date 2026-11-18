@@ -28,11 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests report snapshots independently from Maven dependency analysis. */
-@SuppressWarnings({
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.TooManyMethods",
-  "PMD.AvoidDuplicateLiterals"
-})
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.AvoidDuplicateLiterals"})
 final class MavenElisionReportWriterTest {
   /** Maven group used in synthetic test coordinates. */
   private static final String GROUP_ID = "org.example";

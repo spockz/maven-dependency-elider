@@ -20,7 +20,6 @@ final class MultiReleaseReportMetricsTest {
   MultiReleaseReportMetricsTest() {}
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void zeroPrunedClassesRequireElevationOrChangedServiceDescriptorMetadata() {
     final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "elevated", "1.0");
     final ArtifactTrimRecord singleRelease =

@@ -26,11 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Covers JaCoCo execution data records and invalid binary files. */
-@SuppressWarnings({
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.UncommentedEmptyConstructor",
-  "PMD.CommentDefaultAccessModifier"
-})
+@SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
 class JaCoCoTraceReaderTest {
   /** Supplies isolated files for the tests. */
   @TempDir Path tempDir;

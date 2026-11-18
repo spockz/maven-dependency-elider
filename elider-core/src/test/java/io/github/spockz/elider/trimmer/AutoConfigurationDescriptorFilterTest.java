@@ -24,7 +24,6 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentRequired",
   "PMD.CommentDefaultAccessModifier",
   "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.AvoidDuplicateLiterals"
 })
 final class AutoConfigurationDescriptorFilterTest {

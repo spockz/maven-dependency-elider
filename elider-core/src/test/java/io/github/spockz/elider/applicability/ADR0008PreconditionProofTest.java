@@ -44,7 +44,6 @@ import org.objectweb.asm.Opcodes;
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.AtLeastOneConstructor",
   "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
 })
 @DisplayName("ADR-0008: exact-class precondition proof")

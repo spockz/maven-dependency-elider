@@ -68,7 +68,7 @@ class TranscriptCachePreparationTest {
   private static final Instant FIXTURE_TIMESTAMP = Instant.parse("2026-11-05T22:38:17Z");
 
   @Test
-  @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
+  @SuppressWarnings({"PMD.LawOfDemeter"})
   // Independent setup and round-trip checks should report together.
   void writesEnvelopeUsingInstalledPluginArtifactsWhenRequested() throws Exception {
     final String inputSetting = System.getProperty(INPUT_PROPERTY);

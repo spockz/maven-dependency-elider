@@ -30,7 +30,6 @@ final class MavenElisionServiceProductionRootTest
   }
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void productionBytecodeRootPromotesItsRawDroppedArtifactOwner() throws Exception {
     final Fixture fixture = fixture(false);
     final Path trace = temporaryDirectory.resolve("production-root.lst");

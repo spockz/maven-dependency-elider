@@ -26,7 +26,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies retained-JAR trimming uses the supplied invocation evidence. */
-@SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
 final class MavenDependencyTrimmerTest {
   /** Artifact identity shared by the test archive and Maven project. */
   private static final String ARTIFACT_ID = "runtime";

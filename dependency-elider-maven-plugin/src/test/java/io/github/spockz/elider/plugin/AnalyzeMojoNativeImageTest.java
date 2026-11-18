@@ -35,7 +35,7 @@ final class AnalyzeMojoNativeImageTest {
 
   @Test
   // WHY: Output and artifact checks prove allowed arguments preserve inputs.
-  @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
+  @SuppressWarnings({"PMD.LawOfDemeter"})
   void analyzeAcceptsPermissiveNativeImageArgsWithTrimmingDisabled()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path archive = tempDir.resolve("native-image-analysis.jar");
@@ -78,7 +78,7 @@ final class AnalyzeMojoNativeImageTest {
 
   @Test
   // WHY: Rejection must preserve dependency views and archive bytes.
-  @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
+  @SuppressWarnings({"PMD.LawOfDemeter"})
   void analyzeRejectsHiddenNativeImageIndirectionWithoutMutatingArtifacts()
       throws IOException, ReflectiveOperationException {
     final Path archive = tempDir.resolve("native-image-indirection-analysis.jar");

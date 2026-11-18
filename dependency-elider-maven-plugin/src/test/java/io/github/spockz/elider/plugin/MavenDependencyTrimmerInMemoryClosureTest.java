@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 /** Verifies strict in-memory scanning over complete candidate inventories. */
-@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.TooManyMethods"})
+@SuppressWarnings({"PMD.TooManyMethods"})
 final class MavenDependencyTrimmerInMemoryClosureTest
     extends MavenDependencyTrimmerInMemoryClosureSupport {
   /** Trace entry class for the generated closure fixture. */

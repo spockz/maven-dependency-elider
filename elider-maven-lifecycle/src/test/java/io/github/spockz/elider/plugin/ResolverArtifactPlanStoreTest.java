@@ -40,8 +40,6 @@ final class ResolverArtifactPlanStoreTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
-  // One round-trip assertion checks the complete detached payload contract.
   void roundTripsOnlyJdkPayloadAndKeepsPlansIsolatedByProject() {
     final ResolverArtifactPlan.ProjectIdentity firstProject =
         new ResolverArtifactPlan.ProjectIdentity(

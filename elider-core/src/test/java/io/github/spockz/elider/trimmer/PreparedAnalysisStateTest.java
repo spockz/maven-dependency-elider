@@ -15,7 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** Tests graph supplier release and failed-build retry behavior. */
-@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.UnitTestContainsTooManyAsserts"})
+@SuppressWarnings({"PMD.AtLeastOneConstructor"})
 class PreparedAnalysisStateTest {
   /** Names the candidate class shared by the graph and query fixtures. */
   private static final String ROOT_CLASS = "fixture/Root";

@@ -15,6 +15,9 @@ final class MavenElisionReportRenderer {
   /** Prefix used for nested report rows. */
   private static final String BULLET = "  - ";
 
+  /** Maximum number of pruned class names printed inline per artifact on console. */
+  private static final int MAX_CONSOLE_CLASS_PREVIEW = 5;
+
   private MavenElisionReportRenderer() {}
 
   /** Lists tolerated duplicate classes with the action applied to their owning JARs. */
@@ -122,8 +125,10 @@ final class MavenElisionReportRenderer {
               + (artifact.uncompressedProgramClassBytesPruned() == null
                   ? "unknown"
                   : formatBytes(artifact.uncompressedProgramClassBytesPruned())));
-      if (predicted) {
-        lines.add("    Would remove classes: " + artifact.plannedClasses());
+      if (predicted && artifact.plannedClasses() != null && !artifact.plannedClasses().isEmpty()) {
+        lines.add(
+            "    Classes that would be pruned from this JAR: "
+                + formatClassPreview(artifact.plannedClasses()));
       }
     }
     lines.addAll(
@@ -135,6 +140,18 @@ final class MavenElisionReportRenderer {
         MediatedGraphReportRenderer.render(
             snapshot.mediatedGraph(), snapshot.projectGav(), predicted));
     return List.copyOf(lines);
+  }
+
+  private static String formatClassPreview(final List<String> classes) {
+    if (classes.size() <= MAX_CONSOLE_CLASS_PREVIEW) {
+      return classes.toString();
+    }
+    final int remaining = classes.size() - MAX_CONSOLE_CLASS_PREVIEW;
+    return "["
+        + String.join(", ", classes.subList(0, MAX_CONSOLE_CLASS_PREVIEW))
+        + ", ... (+"
+        + remaining
+        + " more in analysis report)]";
   }
 
   private static List<String> catalogAdoptionLines(

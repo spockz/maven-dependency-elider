@@ -26,11 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Covers JDK Flight Recorder class-load event extraction. */
-@SuppressWarnings({
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.UncommentedEmptyConstructor",
-  "PMD.CommentDefaultAccessModifier"
-})
+@SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
 class JfrTraceReaderTest {
   /** Names the deliberately unrelated event recorded by the test. */
   private static final String UNRELATED_EVENT_NAME = "test.Unrelated";

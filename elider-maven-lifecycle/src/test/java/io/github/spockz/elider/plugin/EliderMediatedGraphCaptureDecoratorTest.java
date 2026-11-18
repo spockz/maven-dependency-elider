@@ -28,9 +28,6 @@ import org.junit.jupiter.api.io.TempDir;
 /** Exercises the separate post-mediation graph capture decorator. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.LawOfDemeter"})
 final class EliderMediatedGraphCaptureDecoratorTest {
-  /** PMD key reused in assertion annotations for multi-field session evidence. */
-  private static final String TOO_MANY_ASSERTS = "PMD.UnitTestContainsTooManyAsserts";
-
   /** Test-specific Maven project root. */
   @TempDir Path temporaryDirectory;
 
@@ -56,7 +53,6 @@ final class EliderMediatedGraphCaptureDecoratorTest {
   }
 
   @Test
-  @SuppressWarnings(TOO_MANY_ASSERTS)
   void delegatesOnceReturnsReplacementRootAndCapturesDecorationTimeProvenance()
       throws IOException, org.eclipse.aether.RepositoryException {
     final MavenProject project =
@@ -148,7 +144,6 @@ final class EliderMediatedGraphCaptureDecoratorTest {
   }
 
   @Test
-  @SuppressWarnings(TOO_MANY_ASSERTS)
   void propagatesDelegateFailureWithoutAppendingSnapshot() throws IOException {
     final MavenProject project =
         EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "failure");
@@ -175,7 +170,7 @@ final class EliderMediatedGraphCaptureDecoratorTest {
   }
 
   @Test
-  @SuppressWarnings({TOO_MANY_ASSERTS, "PMD.DoNotUseThreads"})
+  @SuppressWarnings({"PMD.DoNotUseThreads"})
   void appendsConcurrentGraphInvocationsAndPreservesRepeatedGraph() throws Exception {
     final MavenProject project =
         EliderMediatedGraphCaptureDecoratorTestSupport.project(
@@ -233,7 +228,7 @@ final class EliderMediatedGraphCaptureDecoratorTest {
   }
 
   @Test
-  @SuppressWarnings({TOO_MANY_ASSERTS, "PMD.DoNotUseThreads"})
+  @SuppressWarnings({"PMD.DoNotUseThreads"})
   void isolatesPlanGenerationAcrossConcurrentSessionsForTheSameProject() throws Exception {
     final MavenProject project =
         EliderMediatedGraphCaptureDecoratorTestSupport.project(

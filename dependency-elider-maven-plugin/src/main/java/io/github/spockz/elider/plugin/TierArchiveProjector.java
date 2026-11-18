@@ -186,5 +186,11 @@ final class TierArchiveProjector {
         final ElisionAnalysisModel.ArtifactSnapshot snapshot) {
       return multiReleaseCandidates.get(snapshot);
     }
+
+    /* package */ Set<String> versionedClassesOf(
+        final ElisionAnalysisModel.ArtifactSnapshot snapshot) {
+      final MultiReleaseCandidateInfo info = multiReleaseCandidates.get(snapshot);
+      return info == null ? Set.of() : info.versionedClasses();
+    }
   }
 }

@@ -33,7 +33,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Tests Analyze inputs. JUnit uses its implicit constructor. */
 @SuppressWarnings({
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
   "PMD.CommentRequired",
   "PMD.AtLeastOneConstructor",

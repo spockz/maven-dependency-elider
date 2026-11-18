@@ -42,7 +42,6 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
 })
 @DisplayName("ADR-0008: precondition VEX serialization")

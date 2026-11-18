@@ -15,11 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Covers JVM class loading log file parsing. */
-@SuppressWarnings({
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.UncommentedEmptyConstructor",
-  "PMD.CommentDefaultAccessModifier"
-})
+@SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
 class ClassLoaderLogReaderTest {
   /** Supplies isolated input paths for each test. */
   @TempDir Path tempDir;
@@ -146,5 +142,19 @@ class ClassLoaderLogReaderTest {
     final Path missing = tempDir.resolve("missing.log");
 
     assertThatIOException().isThrownBy(() -> new ClassLoaderLogReader().read(missing));
+  }
+
+  @Test
+  void acceptsPackageInfoClassLoadEntries() throws IOException {
+    final Path log = tempDir.resolve("package-info.log");
+    Files.writeString(
+        log,
+        "[2.346s][info][class,load] org.springframework.boot.actuate.sbom.package-info"
+            + " source: jar:file:/tmp/spring-boot-actuator.jar!/\n");
+
+    final TraceData result = new ClassLoaderLogReader().read(log);
+
+    assertThat(result.loadedClassesDotFormat())
+        .contains("org.springframework.boot.actuate.sbom.package-info");
   }
 }

@@ -17,7 +17,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
 /** Verifies graph-pair selection and TEST context. */
-@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.TooManyMethods"})
+@SuppressWarnings({"PMD.TooManyMethods"})
 final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSupport {
   /** Fixture content used to fingerprint the single resolved JAR. */
   private static final String JAR_BYTES = "jar bytes";

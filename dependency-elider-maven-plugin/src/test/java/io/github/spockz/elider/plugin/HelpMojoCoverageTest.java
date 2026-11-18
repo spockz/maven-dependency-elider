@@ -15,10 +15,7 @@ import org.apache.maven.plugin.logging.Log;
 import org.junit.jupiter.api.Test;
 
 /** Exercises Maven-generated help output. */
-@SuppressWarnings({
-  "PMD.AtLeastOneConstructor", // JUnit owns test-instance creation.
-  "PMD.UnitTestContainsTooManyAsserts" // Assertions verify distinct help-output contracts.
-})
+@SuppressWarnings("PMD.AtLeastOneConstructor") // JUnit owns test-instance creation.
 final class HelpMojoCoverageTest {
   @Test
   void rendersDetailedHelpForEveryGoal()

@@ -29,7 +29,6 @@ final class AnalysisProjectionWorkspaceTest {
 
   @Test
   // WHY: One archive fixture covers success and failure cleanup paths.
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void predictionProjectionDirectoryIsIsolatedAndRemovedAfterSuccessAndFailure() throws Exception {
     final MavenProject project = project();
     final Path existingProjectOutput =

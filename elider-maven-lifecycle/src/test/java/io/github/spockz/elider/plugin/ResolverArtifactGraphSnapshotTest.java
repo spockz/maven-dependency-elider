@@ -17,7 +17,7 @@ import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 import org.junit.jupiter.api.Test;
 
 /** Verifies detached graph capture without changing the graph. */
-@SuppressWarnings({"PMD.CommentRequired", "PMD.UnitTestContainsTooManyAsserts"})
+@SuppressWarnings({"PMD.CommentRequired"})
 final class ResolverArtifactGraphSnapshotTest {
   private static final String ARTIFACT_KEY = "artifact";
 

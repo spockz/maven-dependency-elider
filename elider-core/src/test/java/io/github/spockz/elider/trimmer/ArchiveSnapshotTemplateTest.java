@@ -31,7 +31,6 @@ import proguard.classfile.kotlin.KotlinMetadata;
 @SuppressWarnings({
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.AvoidDuplicateLiterals",
   "PMD.TooManyMethods",
   "PMD.LawOfDemeter",

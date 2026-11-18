@@ -293,9 +293,11 @@ final class PreparedAnalysisState {
         final Deque<String> pending,
         final ClosureQueryPolicy queryPolicy) {
       if (queryPolicy.mode() == ClosureQueryPolicy.Mode.CONSERVATIVE) {
-        graph.edges().getOrDefault(source, Set.of()).stream()
-            .filter(target -> !isDebugMetadataOnlyReference(graph, source, target))
-            .forEach(pending::addLast);
+        for (final String target : graph.edges().getOrDefault(source, Set.of())) {
+          if (!isDebugMetadataOnlyReference(graph, source, target)) {
+            pending.addLast(target);
+          }
+        }
         return;
       }
       graph

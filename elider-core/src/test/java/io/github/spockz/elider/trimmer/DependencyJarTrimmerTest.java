@@ -32,7 +32,6 @@ import proguard.classfile.ClassPool;
 @SuppressWarnings({
   "PMD.TooManyMethods",
   "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.AvoidDuplicateLiterals",
   "PMD.LawOfDemeter",
   "PMD.CyclomaticComplexity",

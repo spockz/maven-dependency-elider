@@ -18,11 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** Tests leaf module detection for reactor builds. */
-@SuppressWarnings({
-  "PMD.CommentRequired",
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.AtLeastOneConstructor"
-})
+@SuppressWarnings({"PMD.CommentRequired", "PMD.AtLeastOneConstructor"})
 final class ReactorLeafModuleDetectorTest {
   private static final String PACKAGING_JAR = "jar";
   private static final String PACKAGING_POM = "pom";

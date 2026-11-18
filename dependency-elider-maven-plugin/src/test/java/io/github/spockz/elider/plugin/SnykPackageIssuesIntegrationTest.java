@@ -23,11 +23,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Tests optional Snyk queries and their source reporting. */
-@SuppressWarnings({
-  "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.AvoidDuplicateLiterals"
-})
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.AvoidDuplicateLiterals"})
 final class SnykPackageIssuesIntegrationTest {
   @Test
   void disabledIntegrationDoesNotQueryOrCreateSourceObservation() {

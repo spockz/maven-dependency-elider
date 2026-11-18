@@ -131,10 +131,7 @@ public final class GenericFindingCacheManager {
       failures.add("Generic findings cache publication failed: " + publicationFailure.getMessage());
       if (cacheValue.isPresent()) {
         return new CacheResult(
-            Optional.of(cacheValue.orElseThrow()),
-            Source.CACHE,
-            failureSummary(failures),
-            cveRefresh.recordsParsed());
+            Optional.of(next), Source.CACHE, failureSummary(failures), cveRefresh.recordsParsed());
       }
       return unavailable(
           failureSummary(failures).orElse("Generic cache publication failed"),

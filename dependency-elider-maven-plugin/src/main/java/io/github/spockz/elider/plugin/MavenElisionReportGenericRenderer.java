@@ -151,6 +151,17 @@ final class MavenElisionReportGenericRenderer {
 
   private static void appendObservations(
       final List<String> lines, final List<FindingSourceObservation> observations) {
+    final boolean hasStale =
+        observations.stream()
+            .anyMatch(observation -> observation.status() == FindingSourceObservation.Status.STALE);
+    final boolean hasError =
+        observations.stream()
+            .anyMatch(observation -> observation.status() == FindingSourceObservation.Status.ERROR);
+    if (hasStale) {
+      lines.add("CVE Freshness: STALE (refresh failed; using last-good snapshots)");
+    } else if (hasError) {
+      lines.add("CVE Freshness: ERROR (refresh failed without complete last-good snapshots)");
+    }
     lines.add(observations.isEmpty() ? "CVE Sources: none" : "CVE Sources:");
     for (final FindingSourceObservation observation : observations) {
       lines.add(

@@ -20,7 +20,6 @@ final class EffectiveGraphInventoryProtectionTest {
   }
 
   // WHY: Keep all protection outcomes asserted for one graph case.
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   @Test
   void nullChildInPreGraphProtectsCandidateAndDirectLeafAdvice() {
     final DependencyNode beforeRoot = rootWithNullChild();
@@ -39,7 +38,6 @@ final class EffectiveGraphInventoryProtectionTest {
   }
 
   // WHY: Keep all protection outcomes asserted for one graph case.
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   @Test
   void nullChildInPostGraphProtectsCandidateAndDirectLeafAdvice() {
     final DependencyNode beforeRoot =

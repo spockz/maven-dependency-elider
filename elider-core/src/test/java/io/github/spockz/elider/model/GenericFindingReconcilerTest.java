@@ -10,12 +10,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Tests identity grouping before common assessment. */
-@SuppressWarnings({
-  "PMD.AvoidDuplicateLiterals",
-  "PMD.LawOfDemeter",
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.ShortVariable"
-})
+@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.LawOfDemeter", "PMD.ShortVariable"})
 class GenericFindingReconcilerTest {
   /** Creates a test instance. */
   /* package */

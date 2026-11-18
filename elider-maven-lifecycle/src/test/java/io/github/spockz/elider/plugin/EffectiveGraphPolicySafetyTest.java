@@ -18,10 +18,7 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class EffectiveGraphPolicySafetyTest {
   /** Groups graph-policy protection behavior assertions. */
-  private static final String MULTI_ASSERTS = "PMD.UnitTestContainsTooManyAsserts";
-
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void protectsRepeatedIdentityWithDifferentOptionalPathMetadata() {
     final DependencyNode root =
@@ -52,7 +49,6 @@ final class EffectiveGraphPolicySafetyTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void protectsRepeatedIdentityWithDifferentExclusions() {
     final DependencyNode root =
@@ -85,7 +81,6 @@ final class EffectiveGraphPolicySafetyTest {
   }
 
   // WHY: A missing child list cannot establish that an elided artifact is a leaf.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void protectsCandidateWithIncompleteChildInventory() {
     final DependencyNode root =
@@ -115,7 +110,6 @@ final class EffectiveGraphPolicySafetyTest {
         .containsEntry("n1", EffectiveGraphPolicy.NodeDisposition.PROTECTED);
   }
 
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void protectsCandidatesWhenPremediationInventoryIsIncomplete() {
     final DependencyNode root =
@@ -147,7 +141,6 @@ final class EffectiveGraphPolicySafetyTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void protectsPremediationConflictFamilyWithoutWinnerMetadata() {
     final DependencyNode beforeRoot =
@@ -229,7 +222,6 @@ final class EffectiveGraphPolicySafetyTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void failsClosedOnScopeMismatchUnknownArtifactAndUnmatchedInventory() {
     final DependencyNode root =
@@ -275,7 +267,6 @@ final class EffectiveGraphPolicySafetyTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void cyclesTerminateAndKeepWholeRequiredComponent() {
     final DependencyNode root =
@@ -312,7 +303,6 @@ final class EffectiveGraphPolicySafetyTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void refusesAmbiguousOrPlanPresentPairAndSupportsNullRootPair() {
     final DependencyNode root =

@@ -28,7 +28,6 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
 /** Validates cache hits against analysis metadata and both output digests. */
-@SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
 final class MavenElisionServiceEffectiveOutputCacheTest
     extends MavenElisionServiceEffectiveOutputSupport {
   /** Shared root included by every cache fixture. */

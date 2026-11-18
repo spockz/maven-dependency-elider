@@ -198,6 +198,11 @@ public final class TrimAnalysisSession {
         this::archive);
   }
 
+  /** Releases cached archive snapshots and class bytes once graph construction is complete. */
+  public void clearSnapshots() {
+    archives.clear();
+  }
+
   private ArchiveSnapshot archive(final Path path, final boolean candidate) throws IOException {
     return archives.read(path, candidate);
   }
@@ -381,6 +386,10 @@ public final class TrimAnalysisSession {
         snapshot.validateCandidate(key, allowModularCandidate);
       }
       return snapshot;
+    }
+
+    private void clear() {
+      archives.clear();
     }
 
     private static void validatePath(final Path path, final boolean candidate) throws IOException {

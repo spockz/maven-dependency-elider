@@ -26,7 +26,7 @@ final class ResolverArtifactPlanPublisherTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
+  @SuppressWarnings({"PMD.LawOfDemeter"})
   void publishesOneProjectAndClearsItsPriorPlanWithoutRemovingAnotherProject() throws IOException {
     final MavenSession session = session();
     final MavenProject firstProject = project("first", "consumer-one");

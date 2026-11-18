@@ -162,6 +162,7 @@ class MavenElisionReportGenericFindingTest {
                     "OVERRIDE",
                     "ENRICHED",
                     "Sources: [CVE_LIST, manual source]",
+                    "CVE Freshness: STALE (refresh failed; using last-good snapshots)",
                     "CVE Sources:\n",
                     "OSV CURRENT",
                     "CVE_LIST STALE",
@@ -197,7 +198,6 @@ class MavenElisionReportGenericFindingTest {
 
   // Validation precedes writing and replaying the same proof fixture.
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void proofEvidenceRoundTripsAllOfAndMixedProviderObservationsOffline()
       throws IOException, ReflectiveOperationException {
     final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "library", "1.5");
@@ -1405,7 +1405,7 @@ class MavenElisionReportGenericFindingTest {
                 .anySatisfy(
                     observation ->
                         assertThat(observation.status())
-                            .isEqualTo(FindingSourceObservation.Status.CURRENT)));
+                            .isEqualTo(FindingSourceObservation.Status.STALE)));
   }
 
   @Test

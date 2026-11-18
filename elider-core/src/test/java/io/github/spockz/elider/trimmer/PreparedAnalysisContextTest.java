@@ -32,7 +32,6 @@ import proguard.classfile.kotlin.UnsupportedKotlinMetadata;
   "PMD.AtLeastOneConstructor",
   "PMD.AvoidDuplicateLiterals",
   "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter"
 })
 class PreparedAnalysisContextTest {

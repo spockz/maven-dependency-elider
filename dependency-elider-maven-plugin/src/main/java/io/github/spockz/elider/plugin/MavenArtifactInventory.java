@@ -34,7 +34,15 @@ final class MavenArtifactInventory {
   }
 
   private static Path normalizedFilePath(final File file) {
-    return file == null ? null : file.toPath().toAbsolutePath().normalize();
+    if (file == null) {
+      return null;
+    }
+    final Path normalized = file.toPath().toAbsolutePath().normalize();
+    try {
+      return Files.exists(normalized) ? normalized.toRealPath() : normalized;
+    } catch (final IOException ignored) {
+      return normalized;
+    }
   }
 
   /* package */ static boolean isJarCandidate(final ArtifactSnapshot snapshot) throws IOException {

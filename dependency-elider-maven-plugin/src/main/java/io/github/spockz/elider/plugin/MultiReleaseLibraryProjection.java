@@ -80,29 +80,30 @@ final class MultiReleaseLibraryProjection {
     final Path projection =
         normalizedOutputDirectory.resolve(
             TrimPaths.coordinateFilePrefix(coordinate) + "-release-" + release + "-analysis.jar");
-    Files.createDirectories(normalizedOutputDirectory);
     try (JarFile input =
-            new JarFile(
-                normalizedOriginal.toFile(),
-                false,
-                ZipFile.OPEN_READ,
-                Runtime.Version.parse(Integer.toString(release)));
-        JarOutputStream output =
-            new JarOutputStream(
-                Files.newOutputStream(
-                    projection,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE))) {
+        new JarFile(
+            normalizedOriginal.toFile(),
+            false,
+            ZipFile.OPEN_READ,
+            Runtime.Version.parse(Integer.toString(release)))) {
       final boolean hasVersionedEntry =
           input.stream().anyMatch(entry -> entry.getName().startsWith(VERSIONS_PREFIX));
-      final Set<String> outputNames = new HashSet<>();
-      for (final JarEntry entry : input.versionedStream().toList()) {
-        copyEffectiveClass(input, output, normalizedOriginal, entry, outputNames);
-      }
       if (!hasVersionedEntry && !hasRootModuleDescriptor(input, normalizedOriginal)) {
-        Files.deleteIfExists(projection);
         return normalizedOriginal;
+      }
+      Files.createDirectories(normalizedOutputDirectory);
+      try (JarOutputStream output =
+          new JarOutputStream(
+              Files.newOutputStream(
+                  projection,
+                  StandardOpenOption.CREATE,
+                  StandardOpenOption.TRUNCATE_EXISTING,
+                  StandardOpenOption.WRITE))) {
+        final Set<String> outputNames = new HashSet<>();
+        final byte[] copyBuffer = new byte[8192];
+        for (final JarEntry entry : input.versionedStream().toList()) {
+          copyEffectiveClass(input, output, normalizedOriginal, entry, outputNames, copyBuffer);
+        }
       }
     }
     return projection;
@@ -113,7 +114,8 @@ final class MultiReleaseLibraryProjection {
       final JarOutputStream output,
       final Path original,
       final JarEntry entry,
-      final Set<String> outputNames)
+      final Set<String> outputNames,
+      final byte[] copyBuffer)
       throws IOException {
     if (entry.isDirectory() || !entry.getName().endsWith(CLASS_SUFFIX)) {
       return;
@@ -131,7 +133,13 @@ final class MultiReleaseLibraryProjection {
     }
     output.putNextEntry(new JarEntry(logicalName));
     try (InputStream classBytes = input.getInputStream(entry)) {
-      classBytes.transferTo(output);
+      while (true) {
+        final int read = classBytes.read(copyBuffer);
+        if (read == -1) {
+          break;
+        }
+        output.write(copyBuffer, 0, read);
+      }
     }
     output.closeEntry();
   }

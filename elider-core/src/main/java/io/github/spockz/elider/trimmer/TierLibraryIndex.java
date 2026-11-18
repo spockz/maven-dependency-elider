@@ -8,7 +8,6 @@ import java.nio.file.Path;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -28,8 +27,8 @@ final class TierLibraryIndex {
   /** Unlinked sibling library templates cloned lazily per target. */
   private final FrozenClassPool templates;
 
-  /** Owning archive snapshots for all classes in this tier. */
-  private final Map<String, ArchiveSnapshot> archiveByClass;
+  /** Known sibling class names in this tier. */
+  private final Set<String> classNames;
 
   /** Pre-indexed library-role reference graph for this tier. */
   private final ReferenceGraph libraryGraph;
@@ -37,15 +36,15 @@ final class TierLibraryIndex {
   TierLibraryIndex(
       final ClassPool jdkTable,
       final FrozenClassPool templates,
-      final Map<String, ArchiveSnapshot> archiveByClass,
+      final Set<String> classNames,
       final ReferenceGraph libraryGraph) {
     this.jdkTable = Objects.requireNonNull(jdkTable, "jdkTable");
     this.templates = Objects.requireNonNull(templates, "templates");
-    this.archiveByClass = Collections.unmodifiableMap(archiveByClass);
+    this.classNames = Set.copyOf(classNames);
     this.libraryGraph = Objects.requireNonNull(libraryGraph, "libraryGraph");
   }
 
-  /** Builds a shared tier index, or returns {@code null} on duplicates. */
+  /** Builds a shared tier index using first-wins sibling precedence. */
   static TierLibraryIndex build(
       final Collection<Path> tierArchives,
       final ClassPool jdkClassTable,
@@ -66,19 +65,20 @@ final class TierLibraryIndex {
       final ArchiveSnapshot archive = archiveProvider.read(archivePath, false);
       final ClassPool pool = ReferenceGraphBuilder.checkedPool(archive, true, archivePath);
       for (final Clazz clazz : pool.classes()) {
-        if (archiveByClass.containsKey(clazz.getName())) {
-          return null;
+        if (archiveByClass.putIfAbsent(clazz.getName(), archive) == null) {
+          lazyPool.addClass(clazz);
+          siblingTemplates.addClass(PlatformClassSnapshot.copyLibraryClassPreservingKotlin(clazz));
         }
-        archiveByClass.put(clazz.getName(), archive);
-        lazyPool.addClass(clazz);
-        siblingTemplates.addClass(PlatformClassSnapshot.copyLibraryClassPreservingKotlin(clazz));
       }
     }
     final ReferenceGraph libraryGraph =
         new ReferenceGraphIndexer(emptyProgramPool, lazyPool, platformNames, archiveByClass)
             .buildLibraryTier();
     return new TierLibraryIndex(
-        isolatedJdkTable, FrozenClassPool.copyOf(siblingTemplates), archiveByClass, libraryGraph);
+        isolatedJdkTable,
+        FrozenClassPool.copyOf(siblingTemplates),
+        archiveByClass.keySet(),
+        libraryGraph);
   }
 
   ClassPool isolatedJdkTable() {
@@ -90,7 +90,7 @@ final class TierLibraryIndex {
   }
 
   boolean containsClass(final String internalName) {
-    return archiveByClass.containsKey(internalName);
+    return classNames.contains(internalName);
   }
 
   ReferenceGraph overlayWithProgram(final ReferenceGraph programGraph) {

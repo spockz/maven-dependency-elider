@@ -32,7 +32,6 @@ import org.junit.jupiter.api.io.TempDir;
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.AvoidDuplicateLiterals",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.TooManyMethods"

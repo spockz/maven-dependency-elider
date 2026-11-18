@@ -14,11 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Covers HotSpot CDS list file parsing. */
-@SuppressWarnings({
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.UncommentedEmptyConstructor",
-  "PMD.CommentDefaultAccessModifier"
-})
+@SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
 class CdsClassListReaderTest {
   /** Supplies isolated input paths for each test. */
   @TempDir Path tempDir;

@@ -37,8 +37,6 @@ final class ElisionSummaryMetricTest {
   ElisionSummaryMetricTest() {}
 
   @Test
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // Checks separate totals and emitted output.
   void reportsDroppedJarClassesWhenRetainedTrimmingIsDisabled() throws IOException {
     final ArtifactCoordinate coordinate =
         ArtifactCoordinate.of(GROUP_ID, DROPPED_ARTIFACT_ID, VERSION);

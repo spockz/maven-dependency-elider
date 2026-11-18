@@ -60,7 +60,6 @@ import org.objectweb.asm.Opcodes;
   "PMD.AvoidDuplicateLiterals",
   "PMD.LawOfDemeter",
   "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
 })
 final class MavenOutputPublicationTest {

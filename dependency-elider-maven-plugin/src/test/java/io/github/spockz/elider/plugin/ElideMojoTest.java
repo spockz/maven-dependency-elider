@@ -81,7 +81,6 @@ import org.objectweb.asm.Opcodes;
   "PMD.TooManyMethods",
   "PMD.GodClass",
   "PMD.CouplingBetweenObjects",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
   "PMD.ShortVariable",
   "PMD.AvoidInstantiatingObjectsInLoops",

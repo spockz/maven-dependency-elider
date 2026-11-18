@@ -53,9 +53,6 @@ final class ReportMojoGraphRenderingTest {
   ReportMojoGraphRenderingTest() {}
 
   @Test
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // The report must preserve several distinct persisted
-  // totals.
   void reportsPersistedTotalsWithoutAnalysisInputs()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path snapshotFile = temporaryDirectory.resolve("report.json");
@@ -136,9 +133,6 @@ final class ReportMojoGraphRenderingTest {
   }
 
   @Test
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // The counts jointly prove cycle termination and
-  // occurrence identity.
   void rendersRepeatedOccurrencesAndCyclesFromSavedGraphOnly()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final ArtifactCoordinate leftCoordinate = coordinate("left");

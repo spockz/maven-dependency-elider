@@ -70,7 +70,6 @@ import org.objectweb.asm.Opcodes;
   "PMD.CouplingBetweenObjects",
   "PMD.ExcessiveImports",
   "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
 })
 final class ADR0008MavenPreconditionAssessmentTest {

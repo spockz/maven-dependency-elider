@@ -14,11 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Covers multi-file composition across supported trace formats. */
-@SuppressWarnings({
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.UncommentedEmptyConstructor",
-  "PMD.CommentDefaultAccessModifier"
-})
+@SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
 class CompositeTraceReaderTest {
   /** Fixture suffix recognized as a unified class-load log. */
   private static final String CLASS_LOAD_LOG = "classes.log";

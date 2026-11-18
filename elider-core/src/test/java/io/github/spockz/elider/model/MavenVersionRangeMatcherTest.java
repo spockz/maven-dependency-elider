@@ -8,7 +8,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 
 /** Verifies Maven version range boundaries and recommended-version behavior. */
-@SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
 final class MavenVersionRangeMatcherTest {
   /** Creates the test fixture. */
   @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.UncommentedEmptyConstructor"})

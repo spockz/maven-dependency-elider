@@ -15,11 +15,7 @@ import org.eclipse.aether.repository.WorkspaceRepository;
 import org.junit.jupiter.api.Test;
 
 /** Checks that the planned reader delegates every non-target workspace lookup. */
-@SuppressWarnings({
-  "PMD.AtLeastOneConstructor",
-  "PMD.CommentRequired",
-  "PMD.UnitTestContainsTooManyAsserts"
-})
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentRequired"})
 final class ResolverSessionProbeTest {
   private static final String KEEP_GROUP = "io.github.spockz.elider.test";
 

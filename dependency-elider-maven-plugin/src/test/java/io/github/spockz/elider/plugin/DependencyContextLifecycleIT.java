@@ -64,7 +64,6 @@ import org.objectweb.asm.Opcodes;
   "PMD.ExcessiveImports",
   "PMD.GodClass",
   "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.UseConcurrentHashMap"
 })
 final class DependencyContextLifecycleIT {

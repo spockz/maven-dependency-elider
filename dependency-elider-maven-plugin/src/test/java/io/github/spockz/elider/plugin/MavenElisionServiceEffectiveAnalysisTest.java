@@ -25,7 +25,6 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
 /** Verifies service-level analysis preparation and fixed-point closure. */
-@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts"})
 final class MavenElisionServiceEffectiveAnalysisTest
     extends MavenDependencyTrimmerInMemoryClosureSupport {
   /** Entry root shared by traced fixed-point scenarios. */

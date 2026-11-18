@@ -22,8 +22,6 @@ final class ResolverArtifactGraphProjectionBehaviorTest {
   ResolverArtifactGraphProjectionBehaviorTest() {}
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
-  // Both assertions prove the chosen occurrence alone was removed.
   void equalCoordinateOccurrencesRemoveOnlyTheSelectedNodeIdentity() {
     final DependencyNode root = node("consumer");
     final DependencyNode firstDrop = node("duplicate");
@@ -39,8 +37,6 @@ final class ResolverArtifactGraphProjectionBehaviorTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
-  // Checks a shared descendant remains reachable from its other parent.
   void sharedDescendantRemainsReachableThroughItsOtherParent() {
     final DependencyNode root = node("consumer");
     final DependencyNode removedBranch = node("removed-parent");
@@ -58,8 +54,6 @@ final class ResolverArtifactGraphProjectionBehaviorTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
-  // The assertions verify winner metadata survives projection and is remapped.
   void externalConflictWinnerReferenceIsRemappedWithTheProjectedNodes() {
     final DependencyNode root = node("consumer");
     final DependencyNode drop = node("drop");

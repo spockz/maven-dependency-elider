@@ -38,7 +38,7 @@ final class ResolverArtifactGraphProjectionMismatchTest {
   ResolverArtifactGraphProjectionMismatchTest() {}
 
   @Test
-  @SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.LawOfDemeter"})
+  @SuppressWarnings({"PMD.LawOfDemeter"})
   // The assertions verify failure occurs before this resolver graph is mutated.
   void mismatchedTestGraphFailsBeforeChangingItsChildren() throws IOException {
     final MavenProject project = project();
@@ -88,7 +88,7 @@ final class ResolverArtifactGraphProjectionMismatchTest {
   }
 
   @Test
-  @SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.LawOfDemeter"})
+  @SuppressWarnings({"PMD.LawOfDemeter"})
   // Checks rollback restores the original child-list object and contents.
   void projectedFingerprintMismatchRestoresTheOriginalChildListObjects() throws IOException {
     final MavenProject project = project();

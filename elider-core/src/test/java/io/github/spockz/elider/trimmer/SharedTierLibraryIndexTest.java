@@ -25,7 +25,6 @@ import proguard.classfile.ClassPool;
 @SuppressWarnings({
   "PMD.AtLeastOneConstructor",
   "PMD.AvoidDuplicateLiterals",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.DoNotUseThreads",
   "PMD.AvoidCatchingGenericException"
 })

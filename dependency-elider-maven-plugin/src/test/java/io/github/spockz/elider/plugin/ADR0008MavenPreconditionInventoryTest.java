@@ -69,7 +69,6 @@ import org.objectweb.asm.Opcodes;
   "PMD.ExcessiveImports",
   "PMD.GodClass",
   "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
 })
 final class ADR0008MavenPreconditionInventoryTest {

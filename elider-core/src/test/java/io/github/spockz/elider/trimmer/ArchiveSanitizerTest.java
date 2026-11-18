@@ -31,7 +31,6 @@ import proguard.classfile.ClassPool;
 /** Checks content, signature cleanup, and provenance of the archive writer. */
 @SuppressWarnings({
   "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
   "PMD.TooManyMethods",
   "PMD.CommentDefaultAccessModifier",

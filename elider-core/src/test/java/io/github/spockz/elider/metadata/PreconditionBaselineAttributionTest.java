@@ -29,7 +29,7 @@ final class PreconditionBaselineAttributionTest {
 
   @Test
   // Independent observations share the actual archive and proof construction.
-  @SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.UseConcurrentHashMap"})
+  @SuppressWarnings({"PMD.UseConcurrentHashMap"})
   void baselineCausesDoNotChangeFinalVexEvidenceAndSourcesStillMerge() throws IOException {
     final PreconditionClassInventory.Provider candidateProvider =
         PreconditionEvidenceTestFixture.provider(

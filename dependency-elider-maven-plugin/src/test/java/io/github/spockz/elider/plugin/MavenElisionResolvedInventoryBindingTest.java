@@ -21,7 +21,6 @@ import org.eclipse.aether.graph.DependencyNode;
 import org.junit.jupiter.api.Test;
 
 /** Verifies local inventory compatibility and digest checks. */
-@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts"})
 final class MavenElisionResolvedInventoryBindingTest extends MavenElisionGraphBindingTestSupport {
   /** Maven group shared by the graph and artifact fixture. */
   private static final String FIXTURE_GROUP = "fixture";

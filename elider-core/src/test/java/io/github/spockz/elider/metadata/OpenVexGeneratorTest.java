@@ -21,8 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
-  "PMD.LocalVariableCouldBeFinal",
-  "PMD.UnitTestContainsTooManyAsserts"
+  "PMD.LocalVariableCouldBeFinal"
 })
 class OpenVexGeneratorTest {
   private static final ObjectMapper JSON = new ObjectMapper();

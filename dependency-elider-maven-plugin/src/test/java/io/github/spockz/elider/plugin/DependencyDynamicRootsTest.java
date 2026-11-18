@@ -33,7 +33,6 @@ import org.objectweb.asm.Type;
 /** Tests dependency dynamic roots scanning and effective roots partitioning. */
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.AtLeastOneConstructor",
   "PMD.TooManyMethods",
   "PMD.AvoidDuplicateLiterals"

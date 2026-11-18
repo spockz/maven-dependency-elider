@@ -470,7 +470,7 @@ final class ReferenceGraphIndexer {
   }
 
   private static <T> Map<String, Set<T>> wrapUnmodifiableSets(final Map<String, Set<T>> source) {
-    source.replaceAll((name, values) -> Collections.unmodifiableSet(values));
+    source.replaceAll((name, values) -> Set.copyOf(values));
     return Collections.unmodifiableMap(source);
   }
 

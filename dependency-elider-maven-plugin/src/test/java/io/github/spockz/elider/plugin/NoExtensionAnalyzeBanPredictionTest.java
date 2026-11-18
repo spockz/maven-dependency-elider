@@ -63,8 +63,7 @@ import org.objectweb.asm.Opcodes;
   "PMD.ExcessiveImports",
   "PMD.GodClass",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts"
+  "PMD.TooManyMethods"
 })
 final class NoExtensionAnalyzeBanPredictionTest {
   private static final String BAN = "fixture:banned";

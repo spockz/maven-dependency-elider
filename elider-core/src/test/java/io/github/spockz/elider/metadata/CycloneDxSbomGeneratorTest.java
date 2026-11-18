@@ -32,8 +32,7 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.LocalVariableCouldBeFinal",
-  "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts"
+  "PMD.TooManyMethods"
 })
 class CycloneDxSbomGeneratorTest {
 

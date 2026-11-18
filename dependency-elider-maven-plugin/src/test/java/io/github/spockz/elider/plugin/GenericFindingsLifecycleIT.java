@@ -65,8 +65,7 @@ import org.objectweb.asm.Opcodes;
   "PMD.ExcessiveImports",
   "PMD.GodClass",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts"
+  "PMD.TooManyMethods"
 })
 final class GenericFindingsLifecycleIT {
   /** Shared temporary root for the one-time seeded local Maven repository. */

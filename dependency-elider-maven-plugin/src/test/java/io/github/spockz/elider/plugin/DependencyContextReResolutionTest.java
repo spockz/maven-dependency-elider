@@ -24,11 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies the lifecycle cache key in the Maven core 3.9.9 test dependency. */
-@SuppressWarnings({
-  "PMD.AvoidDuplicateLiterals",
-  "PMD.LawOfDemeter",
-  "PMD.UnitTestContainsTooManyAsserts"
-})
+@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.LawOfDemeter"})
 final class DependencyContextReResolutionTest {
   /** Temporary files representing original and transformed dependencies. */
   @TempDir private Path tempDir;

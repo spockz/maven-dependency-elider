@@ -14,10 +14,7 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class EffectiveGraphPolicyRetentionTest {
   /** Groups graph-policy retention behavior assertions. */
-  private static final String MULTI_ASSERTS = "PMD.UnitTestContainsTooManyAsserts";
-
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void dropsOnlyUnambiguousLeafAndReturnsDirectLeafAdvisory() {
     final DependencyNode root =
@@ -46,7 +43,6 @@ final class EffectiveGraphPolicyRetentionTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void promotesRawDroppedAncestorOfRetainedChild() {
     final DependencyNode root =
@@ -77,7 +73,6 @@ final class EffectiveGraphPolicyRetentionTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void promotesEveryRepeatedIdentityBeforeRecomputingAncestors() {
     final DependencyNode root =
@@ -119,7 +114,6 @@ final class EffectiveGraphPolicyRetentionTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void preservesBothDiamondPathsButDropsUnrelatedLeaf() {
     final DependencyNode root =
@@ -166,7 +160,6 @@ final class EffectiveGraphPolicyRetentionTest {
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
-  @SuppressWarnings(MULTI_ASSERTS)
   @Test
   void repeatedEqualIdentityOccurrencesAreDroppedTogetherWhenAllAreSafeLeaves() {
     final DependencyNode root =

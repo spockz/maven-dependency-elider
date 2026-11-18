@@ -22,12 +22,7 @@ import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-@SuppressWarnings({
-  "PMD.AtLeastOneConstructor",
-  "PMD.CommentRequired",
-  "PMD.LawOfDemeter",
-  "PMD.UnitTestContainsTooManyAsserts"
-})
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentRequired", "PMD.LawOfDemeter"})
 final class MavenElisionOutputPublisherBanBoundaryTest {
   private static final String BAN = "fixture:banned";
   private static final String PREVIOUS_REPORT = "prior report\n";

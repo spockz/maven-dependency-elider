@@ -20,12 +20,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Verifies pruning decisions and failures using hermetic inputs. */
-@SuppressWarnings({
-  "PMD.TooManyMethods",
-  "PMD.AvoidDuplicateLiterals",
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.AtLeastOneConstructor"
-})
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.AvoidDuplicateLiterals", "PMD.AtLeastOneConstructor"})
 class DependencyPrunerTest {
   /** The pruner exercised by each independent policy case. */
   private final DependencyPruner pruner = new DependencyPruner();

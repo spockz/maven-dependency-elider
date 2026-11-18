@@ -90,7 +90,7 @@ public final class ProductionBytecodeReferenceScanner {
       return 0;
     }
     try (java.io.InputStream input = archive.getInputStream(entry)) {
-      return scanClassFile(scope.resolve(entry.getName()), input.readAllBytes(), references);
+      return scanClassStream(scope.resolve(entry.getName()), input, references);
     }
   }
 
@@ -117,17 +117,32 @@ public final class ProductionBytecodeReferenceScanner {
   static int scanClassFile(final Path path, final byte[] content, final Set<String> references)
       throws IOException {
     try {
-      new ClassReader(content)
-          .accept(
-              new AsmClassReferenceVisitor(
-                  path.toString(),
-                  true,
-                  (internalName, unusedKind) ->
-                      references.add(TraceData.normalizeToDot(internalName))),
-              0);
+      scanReader(path, new ClassReader(content), references);
     } catch (final RuntimeException exception) {
       throw new IOException("Could not scan production class file: " + path, exception);
     }
     return 1;
+  }
+
+  @SuppressWarnings("PMD.AvoidCatchingGenericException")
+  private static int scanClassStream(
+      final Path path, final java.io.InputStream input, final Set<String> references)
+      throws IOException {
+    try {
+      scanReader(path, new ClassReader(input), references);
+    } catch (final RuntimeException exception) {
+      throw new IOException("Could not scan production class file: " + path, exception);
+    }
+    return 1;
+  }
+
+  private static void scanReader(
+      final Path path, final ClassReader reader, final Set<String> references) {
+    reader.accept(
+        new AsmClassReferenceVisitor(
+            path.toString(),
+            true,
+            (internalName, unusedKind) -> references.add(TraceData.normalizeToDot(internalName))),
+        0);
   }
 }

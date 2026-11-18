@@ -18,11 +18,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Tests report output ordering, categories, and source attribution. */
-@SuppressWarnings({
-  "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.AvoidDuplicateLiterals"
-})
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.AvoidDuplicateLiterals"})
 class ClassUsageReportTest {
   /** First synthetic artifact used by report inputs. */
   private final ArtifactFileRef first = artifact("first", "classes.jar");

@@ -29,7 +29,6 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.AtLeastOneConstructor",
   "PMD.TooManyMethods",
   "PMD.CommentRequired",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
   "PMD.AvoidDuplicateLiterals",
   "PMD.SignatureDeclareThrowsException",

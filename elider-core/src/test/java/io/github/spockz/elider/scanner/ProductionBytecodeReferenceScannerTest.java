@@ -29,9 +29,6 @@ class ProductionBytecodeReferenceScannerTest {
   /** Name shared by generated annotation and record values. */
   private static final String VALUE_NAME = "value";
 
-  /** PMD rule locally waived for semantic tests with multiple related claims. */
-  private static final String MULTI_ASSERT_RULE = "PMD.UnitTestContainsTooManyAsserts";
-
   /** Supplies isolated production class output directories. */
   @TempDir Path tempDir;
 
@@ -39,7 +36,6 @@ class ProductionBytecodeReferenceScannerTest {
   ProductionBytecodeReferenceScannerTest() {}
 
   @Test
-  @SuppressWarnings(MULTI_ASSERT_RULE)
   void collectsDirectSymbolicReferencesButIgnoresClassNameStrings() throws IOException {
     final Path output = Files.createDirectory(tempDir.resolve("classes"));
     final ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -277,7 +273,6 @@ class ProductionBytecodeReferenceScannerTest {
   }
 
   @Test
-  @SuppressWarnings(MULTI_ASSERT_RULE)
   void distinguishesCompleteEmptyScanFromMissingOutput() throws IOException {
     final Path output = Files.createDirectory(tempDir.resolve("empty-classes"));
 
@@ -292,7 +287,6 @@ class ProductionBytecodeReferenceScannerTest {
   }
 
   @Test
-  @SuppressWarnings(MULTI_ASSERT_RULE)
   void resultNormalizesNamesToSortedImmutableDottedNames() {
     final BytecodeReferenceScan result =
         new BytecodeReferenceScan(
@@ -303,7 +297,6 @@ class ProductionBytecodeReferenceScannerTest {
   }
 
   @Test
-  @SuppressWarnings(MULTI_ASSERT_RULE)
   void rejectsMalformedClassFilesAndSymbolicLinks() throws IOException {
     final Path malformed = Files.createDirectory(tempDir.resolve("malformed-classes"));
     Files.writeString(malformed.resolve("Broken.class"), "not a class file");
@@ -314,5 +307,34 @@ class ProductionBytecodeReferenceScannerTest {
     final Path outside = Files.writeString(tempDir.resolve("outside.class"), "not followed");
     Files.createSymbolicLink(linked.resolve("Linked.class"), outside);
     assertThatIOException().isThrownBy(() -> new ProductionBytecodeReferenceScanner().scan(linked));
+  }
+
+  @Test
+  void scansSelectedArchiveClassesPerClassWithoutDebugEdges() throws IOException {
+    final String liveInternalName = "sample/Live";
+    final Path jar = tempDir.resolve("selected.jar");
+    final ClassWriter liveWriter = new ClassWriter(0);
+    liveWriter.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, liveInternalName, null, "sample/Base", null);
+    liveWriter.visitEnd();
+    final ClassWriter deadWriter = new ClassWriter(0);
+    deadWriter.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "sample/Dead", null, "sample/Unused", null);
+    deadWriter.visitEnd();
+    try (java.util.jar.JarOutputStream output =
+        new java.util.jar.JarOutputStream(Files.newOutputStream(jar))) {
+      output.putNextEntry(new java.util.jar.JarEntry("sample/Live.class"));
+      output.write(liveWriter.toByteArray());
+      output.closeEntry();
+      output.putNextEntry(new java.util.jar.JarEntry("sample/Dead.class"));
+      output.write(deadWriter.toByteArray());
+      output.closeEntry();
+    }
+
+    final java.util.Map<String, java.util.Set<String>> perClass =
+        ArchiveClassScanner.scanSelected(jar, java.util.Set.of(liveInternalName));
+
+    assertThat(perClass).containsOnlyKeys(liveInternalName);
+    assertThat(perClass.get(liveInternalName))
+        .contains("sample.Base")
+        .doesNotContain("sample.Unused");
   }
 }

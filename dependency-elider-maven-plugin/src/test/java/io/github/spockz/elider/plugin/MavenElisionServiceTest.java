@@ -41,8 +41,7 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CouplingBetweenObjects",
   "PMD.ExcessiveImports",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods",
-  "PMD.UnitTestContainsTooManyAsserts"
+  "PMD.TooManyMethods"
 })
 final class MavenElisionServiceTest {
   /** Temporary directory for resolved JAR path checks. */
@@ -164,7 +163,6 @@ final class MavenElisionServiceTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void planFiltersDirectScopeVariantsAndPreservesUnrepresentedEntries() throws IOException {
     final Path jar = writeJar("library.jar");
     final Artifact resolved = artifact("library", "compile");

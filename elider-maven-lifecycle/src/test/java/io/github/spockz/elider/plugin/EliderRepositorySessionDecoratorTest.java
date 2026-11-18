@@ -29,8 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
-  "PMD.LawOfDemeter",
-  "PMD.UnitTestContainsTooManyAsserts"
+  "PMD.LawOfDemeter"
 })
 final class EliderRepositorySessionDecoratorTest {
   private static final String GROUP = "example";

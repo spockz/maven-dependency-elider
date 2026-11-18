@@ -6,6 +6,9 @@ package io.github.spockz.elider.trace;
 /** Validates JVM binary names and identifies hidden classes for trace filtering. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class TraceClassName {
+  /** Synthetic class name used for package-level annotations. */
+  private static final String PACKAGE_INFO = "package-info";
+
   private TraceClassName() {}
 
   static boolean isValid(final String name) {
@@ -17,6 +20,13 @@ final class TraceClassName {
       return false;
     }
     final String ordinaryName = marker < 0 ? name : name.substring(0, marker);
+    if (PACKAGE_INFO.equals(ordinaryName)) {
+      return true;
+    }
+    if (ordinaryName.endsWith("." + PACKAGE_INFO) || ordinaryName.endsWith("/" + PACKAGE_INFO)) {
+      return isValidSegments(
+          ordinaryName.substring(0, ordinaryName.length() - PACKAGE_INFO.length() - 1));
+    }
     return isValidSegments(ordinaryName);
   }
 

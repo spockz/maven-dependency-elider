@@ -49,7 +49,6 @@ import org.objectweb.asm.Opcodes;
   "PMD.CouplingBetweenObjects",
   "PMD.AvoidDuplicateLiterals",
   "PMD.LawOfDemeter",
-  "PMD.UnitTestContainsTooManyAsserts",
   "PMD.AtLeastOneConstructor"
 })
 final class MavenPreconditionPredictionTest {

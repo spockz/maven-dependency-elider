@@ -47,7 +47,6 @@ final class AnalyzeMojoProductionOutputTest {
   @Test
   @DisplayName("ADR-0010/analyze uses configured bytecode output and reports compile savings")
   // WHY: One execution proves output resolution and report evidence together.
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void productionClassesCompleteUsesConfiguredOutputAndReportsCompileCveSavings()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
@@ -170,7 +169,6 @@ final class AnalyzeMojoProductionOutputTest {
 
   @Test
   // WHY: One report proves stable serialization and complete evidence.
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void writesCompleteStaticGroupsAndDeterministicClassNames()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
@@ -228,7 +226,6 @@ final class AnalyzeMojoProductionOutputTest {
 
   @Test
   // WHY: Rejection and an unpublished report prove the output boundary.
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void rejectsInvalidClassOutputWithoutWritingReport()
       throws IOException, ReflectiveOperationException {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =

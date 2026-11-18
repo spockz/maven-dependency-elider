@@ -8,7 +8,7 @@ import io.github.spockz.elider.model.MultiReleaseClassInventory;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
@@ -27,8 +27,7 @@ final class MultiReleaseJarTrimmer {
     if (!request.policy().trimPassThroughOnUnresolved()) {
       return analyzeInMemoryPass(request, discoveredRoots, forcedUnchanged);
     }
-    final Set<ArtifactCoordinate> effectiveForcedUnchanged =
-        new java.util.LinkedHashSet<>(forcedUnchanged);
+    final Set<ArtifactCoordinate> effectiveForcedUnchanged = new LinkedHashSet<>(forcedUnchanged);
     while (true) {
       try {
         return analyzeInMemoryPass(request, discoveredRoots, Set.copyOf(effectiveForcedUnchanged));
@@ -81,11 +80,21 @@ final class MultiReleaseJarTrimmer {
             new TierCandidatePlanner(operation)
                 .createCandidates(
                     roots, prepared.projections(), prepared.inventory().multiReleaseCandidates());
-    final List<TierArchiveProjector.TierContext> contexts =
-        new TierAnalysisPreparer(operation)
-            .prepareContexts(prepared.inventory(), prepared.projections(), roots, candidates);
-    final TierClosureAnalyzer.ClosureResult closure =
-        new TierClosureAnalyzer(operation).analyzeToFixedPoint(contexts, roots, candidates);
+    final TierClosureAnalyzer.ClosureResult closure;
+    if (NoTrimClosureAnalyzer.supports(request)) {
+      closure = NoTrimClosureAnalyzer.analyze(operation, prepared.projections(), roots);
+    } else {
+      final TierAnalysisPreparer.PreparedContexts preparedContexts =
+          new TierAnalysisPreparer(operation)
+              .prepareContexts(prepared.inventory(), prepared.projections(), roots, candidates);
+      try {
+        closure =
+            new TierClosureAnalyzer(operation)
+                .analyzeToFixedPoint(preparedContexts.contexts(), roots, candidates);
+      } finally {
+        preparedContexts.clearSnapshots();
+      }
+    }
     return new TierAnalysisResultBuilder(operation)
         .createResult(
             prepared.inventory(),
