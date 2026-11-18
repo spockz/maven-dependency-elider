@@ -100,9 +100,9 @@
       "goal": "report",
       "expectedExitCode": 0,
       "requiredOutput": [
-        "CVE-2024-50379 org.apache.tomcat.embed:tomcat-embed-core",
-        "CVE-2026-18401 com.fasterxml.jackson.core:jackson-core",
-        "CVE-2026-77310 com.fasterxml.jackson.core:jackson-databind"
+        "CVE-2026-106449 at.yawk.lz4:lz4-java",
+        "CVE-2026-108106 org.xerial.snappy:snappy-java",
+        "CVE-2026-110879 tools.jackson.core:jackson-databind"
       ],
       "maxGraphRows": 3
     },
