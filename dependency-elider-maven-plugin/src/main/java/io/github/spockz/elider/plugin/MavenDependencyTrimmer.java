@@ -60,6 +60,13 @@ public final class MavenDependencyTrimmer {
   /* package */ static TrimResult stageEffectiveOutputs(
       final ElisionAnalysisModel.EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
+    return stageEffectiveOutputs(effective, null);
+  }
+
+  /* package */ static TrimResult stageEffectiveOutputs(
+      final ElisionAnalysisModel.EffectiveAnalysis effective,
+      final TrimGenerationPublisher.OutputCheck outputCheck)
+      throws IOException, MojoFailureException {
     final ElisionAnalysisModel.PreparedAnalysis prepared = effective.prepared();
     final ElisionAnalysisModel.AnalysisOptions options = prepared.options();
     final TrimRequest request =
@@ -96,6 +103,9 @@ public final class MavenDependencyTrimmer {
     final List<DuplicateClasses.ToleratedDuplicate> duplicates =
         DuplicateClasses.resolveRetained(request);
     if (!options.trim().enabled()) {
+      if (outputCheck != null) {
+        outputCheck.check(Map.of());
+      }
       return TrimResult.empty(
               new TrimExecutionEnvironment(
                   effective.trimAnalysis().targetRelease(),
@@ -109,7 +119,8 @@ public final class MavenDependencyTrimmer {
             effective.trimAnalysis().targetRelease(),
             effective.trimAnalysis().runtimeRelease(),
             context,
-            outputPlan)
+            outputPlan,
+            outputCheck)
         .withToleratedDuplicates(duplicates);
   }
 

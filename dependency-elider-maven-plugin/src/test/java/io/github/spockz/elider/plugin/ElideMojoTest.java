@@ -660,6 +660,7 @@ final class ElideMojoTest {
     mapping.setAssertsAffected(true);
     mapping.setVulnerableClasses(List.of("sample.Drop"));
     mapping.setConfidenceLevel("HIGH");
+    set(mapping, "forbidDeclaredCode", true);
     set(mojo, "vulnerabilityMappings", List.of(mapping));
     final ObjectMapper cacheMapper = new ObjectMapper();
     final ObjectNode cachedMapping = cacheMapper.createObjectNode();
@@ -731,6 +732,23 @@ final class ElideMojoTest {
     assertThat(project.getDependencyArtifacts()).isSameAs(directBefore).contains(directRuntime);
     final MavenElisionReportSnapshot report =
         MavenElisionReportWriter.read(tempDir.resolve("build/dependency-elider-report.json"));
+    final JsonNode published =
+        new ObjectMapper()
+            .readTree(tempDir.resolve("build/dependency-elider-report.json").toFile());
+    assertAll(
+        "verified policy absence accompanies eligible VEX",
+        () ->
+            assertThat(published.path("forbiddenCodeAssessments"))
+                .singleElement()
+                .satisfies(
+                    row ->
+                        assertAll(
+                            () -> assertThat(row.path("status").asText()).isEqualTo("PASS"),
+                            () -> assertThat(row.path("mode").asText()).isEqualTo("OBSERVED"))),
+        () ->
+            assertThat(tempDir.resolve("build/dependency-elider.openvex.json"))
+                .content()
+                .contains("CVE-2026-10001"));
     assertThat(report.wholeArtifactsDropped()).isZero();
     assertThat(report.rawDroppedCoordinates())
         .contains("org.example:unused-runtime:jar:1.0 (runtime)");
@@ -785,6 +803,189 @@ final class ElideMojoTest {
                 .asText())
         .isEqualTo("CVE-2026-10001");
     assertThat(original).isRegularFile();
+  }
+
+  @Test
+  void rechecksCachedOutputsAndRejectsBeforeReplacingTheLastAppliedReportOrVex() throws Exception {
+    final Path library =
+        compileJarSources(
+            "policy-runtime-calls",
+            Map.of(
+                "sample/Keep.java",
+                """
+                package sample;
+                public class Keep {
+                  public byte[] call(byte[] input) {
+                    return java.util.Base64.getDecoder().decode(input);
+                  }
+                }
+                """,
+                "sample/Drop.java",
+                """
+                package sample;
+                public class Drop {
+                  public byte[] call(String input) {
+                    return java.util.Base64.getDecoder().decode(input);
+                  }
+                }
+                """),
+            null);
+    final Artifact artifact = runtimeArtifact("runtime-dependency", library);
+    final File original = artifact.getFile();
+    final String originalDigest = HexDigest.sha256(original.toPath());
+    final MavenProject project = project(artifact, new LinkedHashSet<>(List.of(artifact)));
+    project
+        .getProperties()
+        .setProperty("maven.compiler.release", Integer.toString(Runtime.version().feature()));
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("policy-build").toString());
+    build.setOutputDirectory(tempDir.resolve("policy-build/classes").toString());
+    project.setBuild(build);
+    final Path trace = writeTrace("sample.Keep\n");
+    final Path report = tempDir.resolve("policy-report.json");
+    final Path vex = tempDir.resolve("policy-vex.json");
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "trimJars", true);
+    set(mojo, "reportFile", tempDir.resolve("policy-classes.json").toFile());
+    set(mojo, "summaryFile", report.toFile());
+    set(mojo, "vexFile", vex.toFile());
+    final VulnerabilityMappingConfig retained = forbiddenMethodMapping("sample.Keep#Keep()");
+    retained.setCveId("CVE-2026-10002");
+    final VulnerabilityMappingConfig runtime = new VulnerabilityMappingConfig();
+    runtime.setCveId("CVE-2026-10004");
+    runtime.setComponentKind(ForbiddenCodeAssessment.ComponentKind.JAVA_RUNTIME);
+    runtime.setVersionRangeSpec("(,)");
+    runtime.setForbiddenSymbols(List.of("java.util.Base64.Decoder#decode(byte[])"));
+    final RecordingMavenLog log = new RecordingMavenLog();
+    mojo.setLog(log);
+    set(mojo, "vulnerabilityMappings", List.of(retained, runtime));
+    set(mojo, "failOnForbiddenCode", true);
+    assertThatThrownBy(mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Forbidden code");
+    final Path manifest = TrimPaths.cacheManifestPath(project);
+    assertAll(
+        "staged rejection publishes neither a cache manifest nor report files",
+        () ->
+            assertThat(log.errors()).anyMatch(line -> line.contains("STAGED_ARCHIVE_DECLARATIONS")),
+        () ->
+            assertThat(log.errors())
+                .anyMatch(
+                    line ->
+                        line.contains("OBSERVED VIOLATION: CVE-2026-10004")
+                            && line.contains("DIRECT_RUNTIME_CALL")
+                            && line.contains("!sample/Keep.class")),
+        () -> assertThat(manifest).doesNotExist(),
+        () -> assertThat(report).doesNotExist(),
+        () -> assertThat(vex).doesNotExist(),
+        () -> assertThat(artifact.getFile()).isEqualTo(original));
+
+    final VulnerabilityMappingConfig omission = forbiddenMethodMapping("sample.Drop#Drop()");
+    omission.setAssertsAffected(true);
+    final VulnerabilityMappingConfig alreadyAbsent =
+        forbiddenMethodMapping("sample.Absent#Absent()");
+    alreadyAbsent.setCveId("CVE-2026-10003");
+    alreadyAbsent.setAssertsAffected(true);
+    final VulnerabilityMappingConfig removedCaller = new VulnerabilityMappingConfig();
+    removedCaller.setCveId("CVE-2026-10005");
+    removedCaller.setComponentKind(ForbiddenCodeAssessment.ComponentKind.JAVA_RUNTIME);
+    removedCaller.setVersionRangeSpec("(,)");
+    removedCaller.setForbiddenSymbols(List.of("java.util.Base64.Decoder#decode(java.lang.String)"));
+    set(mojo, "vulnerabilityMappings", List.of(omission, alreadyAbsent, removedCaller));
+    mojo.execute();
+    assertThat(MavenElisionReportWriter.read(report).forbiddenCodeAssessments())
+        .filteredOn(row -> "CVE-2026-10005".equals(row.cveId()))
+        .extracting(ForbiddenCodeAssessment::status)
+        .containsExactly(ForbiddenCodeAssessment.Status.UNKNOWN);
+    final byte[] lastSuccessful = Files.readAllBytes(report);
+    final byte[] lastVex = Files.readAllBytes(vex);
+    assertThat(vex)
+        .content()
+        .as("omission proof requires original presence")
+        .contains("CVE-2026-10001")
+        .doesNotContain("CVE-2026-10003");
+    artifact.setFile(original);
+    set(mojo, "vulnerabilityMappings", List.of(omission, retained, runtime));
+    final RecordingMavenLog cachedLog = new RecordingMavenLog();
+    mojo.setLog(cachedLog);
+
+    assertThatThrownBy(mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Forbidden code");
+    assertAll(
+        () ->
+            assertThat(cachedLog.errors())
+                .anyMatch(
+                    line -> line.contains("sample.Keep#Keep()") && line.contains("CACHED_ARCHIVE")),
+        () ->
+            assertThat(cachedLog.errors())
+                .anyMatch(
+                    line ->
+                        line.contains("DIRECT_RUNTIME_CALL")
+                            && line.contains("!sample/Keep.class")),
+        () -> assertThat(Files.readAllBytes(report)).isEqualTo(lastSuccessful),
+        () -> assertThat(Files.readAllBytes(vex)).isEqualTo(lastVex),
+        () -> assertThat(artifact.getFile()).isEqualTo(original),
+        () -> assertThat(HexDigest.sha256(original.toPath())).isEqualTo(originalDigest));
+  }
+
+  private static VulnerabilityMappingConfig forbiddenMethodMapping(final String symbol) {
+    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
+    mapping.setCveId("CVE-2026-10001");
+    mapping.setGroupId("org.example");
+    mapping.setArtifactId("runtime-dependency");
+    mapping.setVersion("1.0");
+    mapping.setForbiddenSymbols(List.of(symbol));
+    return mapping;
+  }
+
+  @Test
+  void passThroughViolationAndTestScopeAbsenceAreReportedAlongsideRuntimeUnknown()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact library = compiledArtifact();
+    final Artifact testOnly = artifact("test-only", "sample/TestOnly.class");
+    testOnly.setScope(Artifact.SCOPE_TEST);
+    final MavenProject project = project(library, new LinkedHashSet<>(List.of(library, testOnly)));
+    final File original = library.getFile();
+    final ElideMojo mojo = newMojo();
+    final Path summary = tempDir.resolve("passthrough-policy-report.json");
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("sample.Keep\n").toFile()));
+    set(mojo, "summaryFile", summary.toFile());
+    set(mojo, "reportFile", tempDir.resolve("passthrough-policy-class-usage.json").toFile());
+    set(mojo, "cveCacheDirectory", tempDir.resolve("passthrough-policy-cve-cache").toFile());
+    final VulnerabilityMappingConfig retained = forbiddenMethodMapping("sample.Keep#Keep()");
+    final VulnerabilityMappingConfig tests = forbiddenMethodMapping("sample.TestOnly");
+    tests.setArtifactId("test-only");
+    final VulnerabilityMappingConfig runtime = new VulnerabilityMappingConfig();
+    runtime.setCveId("CVE-2026-10002");
+    runtime.setComponentKind(ForbiddenCodeAssessment.ComponentKind.JAVA_RUNTIME);
+    runtime.setVersionRangeSpec("(,)");
+    runtime.setForbiddenSymbols(List.of("java.lang.System#gc()"));
+    final VulnerabilityMappingConfig version = forbiddenMethodMapping("sample.Keep#Keep()");
+    version.setVersion("2.0");
+    set(mojo, "vulnerabilityMappings", List.of(retained, tests, runtime, version));
+
+    mojo.execute();
+
+    final MavenElisionReportSnapshot report = MavenElisionReportWriter.read(summary);
+    assertAll(
+        "one result for each independently scoped rule",
+        () ->
+            assertThat(report.forbiddenCodeAssessments())
+                .extracting(ForbiddenCodeAssessment::status)
+                .containsExactlyInAnyOrder(
+                    ForbiddenCodeAssessment.Status.VIOLATION,
+                    ForbiddenCodeAssessment.Status.PASS,
+                    ForbiddenCodeAssessment.Status.UNKNOWN,
+                    ForbiddenCodeAssessment.Status.NOT_APPLICABLE),
+        () -> assertThat(library.getFile()).isEqualTo(original));
+
+    set(mojo, "vulnerabilityMappings", List.of(runtime));
+    set(mojo, "failOnForbiddenCode", true);
+    assertThatCode(mojo::execute).doesNotThrowAnyException();
   }
 
   @Test
@@ -863,10 +1064,30 @@ final class ElideMojoTest {
     set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
     set(mojo, "reportFile", tempDir.resolve("mr-default-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("mr-default-build/sbom.json").toFile());
+    final Path summary = tempDir.resolve("mr-default-summary.json");
+    set(mojo, "summaryFile", summary.toFile());
     set(mojo, "trimJars", true);
+    final VulnerabilityMappingConfig upperTier =
+        forbiddenMethodMapping("mrroot.UnusedUpperFeature");
+    upperTier.setArtifactId("mr-default-root");
+    set(mojo, "vulnerabilityMappings", List.of(upperTier));
 
     mojo.execute();
 
+    final MavenElisionReportSnapshot applied = MavenElisionReportWriter.read(summary);
+    assertThat(applied.forbiddenCodeAssessments())
+        .singleElement()
+        .satisfies(
+            row ->
+                assertAll(
+                    "retained upper-tier code remains in the physical policy scope",
+                    () ->
+                        assertThat(row.status())
+                            .isEqualTo(ForbiddenCodeAssessment.Status.VIOLATION),
+                    () ->
+                        assertThat(row.matches())
+                            .extracting(ForbiddenCodeAssessment.Match::tier)
+                            .containsExactly(17)));
     assertThat(Files.readAllBytes(fixture.multiReleasePath())).isEqualTo(originalMultiReleaseBytes);
     assertThat(fixture.multiRelease().getFile().toPath()).isNotEqualTo(fixture.multiReleasePath());
     assertThat(fixture.candidate().getFile().toPath()).isNotEqualTo(fixture.candidatePath());

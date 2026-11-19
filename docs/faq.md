@@ -21,7 +21,7 @@ With the core extension in `.mvn/extensions.xml` and an active elider execution,
 ./mvnw -Delide.skip=false -Delide.traceFiles=/path/to/trace.log dependency:tree
 ```
 
-For single-project modules, the extension schedules elision before `dependency:tree` so dropped leaves disappear from the output (multi-project reactors are rejected). Each invocation computes a fresh plan. See [the integration tests](../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java#L583) and [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+For single-project modules, the extension schedules elision before `dependency:tree` so dropped leaves disappear from the output (multi-project reactors are rejected). Each invocation computes a fresh plan. See [the integration tests](../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java) and [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
 
 ### Why did a raw dependency candidate remain in my build?
 
@@ -29,7 +29,7 @@ Whole-artifact removal requires the core extension (`.mvn/extensions.xml`) and a
 
 ### What does the nonmutating `analyze` summary mean?
 
-It forecasts whole-artifact drops and on-disk JAR byte savings in a read-only pass. With `elide.trimJars=true` (default), it also previews intra-JAR class pruning (`Classes that would be pruned from this JAR`; full list in `target/dependency-elider-analysis-report.json`). With `elide.trimJars=false`, it runs a fast streaming ASM pass for whole-artifact elision only.
+It forecasts whole-artifact drops and on-disk JAR byte savings in a read-only pass. By default, `elide.trimJars=false`. Enable `elide.trimJars=true` to preview intra-JAR class pruning. The full list is in `target/dependency-elider-analysis-report.json`.
 
 ### How can I keep a dependency JAR unchanged?
 
@@ -83,6 +83,23 @@ Syntactically valid arguments outside the audited GraalVM Native Image 21.0.12+7
 ### Does removing classes make a vulnerability finding go away?
 
 Not automatically. Package scanners still see the original coordinate unless the whole JAR is dropped. Elider emits a physical omission proof (`DECLARED_CODE_ABSENT`) only when an exact component/version's attributable declared classes are verified absent from the final artifact (package matches or `REVIEW_LEAD` heuristics cannot establish proof). Prerequisite proofs (`PREREQUISITES_ABSENT`) require `elide.preconditionClassPathComplete=true`. Only `elide` publishes CycloneDX/OpenVEX files. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) and [RQ-0013](research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+
+### Can I fail a build when a forbidden class or method survives?
+
+Yes. In your POM, select `forbiddenSymbols` or set `forbidDeclaredCode=true` on a vulnerability
+mapping, then enable `-Delide.failOnForbiddenCode=true`. Exact method rules identify the
+overload by parameter types. Elide checks effective production outputs at `process-classes`,
+including unchanged JARs and retained multi-release entries. Analyze predicts the same scope.
+Unknown evidence, including unproven Java-runtime reachability, is reported and does not fail
+the build. VEX still requires an applicable CVE and complete omission proof. [Forbidden-code configuration](../dependency-elider-maven-plugin/src/site/markdown/usage.md#forbidden-code-policy)
+
+The [runnable examples](../dependency-elider-maven-plugin/src/site/markdown/usage.md#runnable-forbidden-code-examples)
+use benign Base64 and ZIP inputs. The Java4Shell decoder variant violates the rule because its
+bytecode calls the exact configured method. The plain-text variant reports `UNKNOWN` because
+the check cannot rule out indirect calls. A missing target runtime image leaves version
+applicability unknown while still allowing the exact call to violate policy. The Commons Compress
+rule reports a pass when the stream class is omitted, a violation when its method survives, and
+`NOT_APPLICABLE` at the fixed version.
 
 ### Which sources produce vulnerability findings?
 
@@ -147,12 +164,12 @@ Kotlin is analyzed strictly as JVM bytecode (no `.kt`/`.kts` source scanning).
 | `kotlin.Metadata` on sibling library classes | Parsed and validated; not a reachability source | Reparsed per context; malformed metadata fails closed ([`LibraryArchiveTemplates`](../elider-core/src/main/java/io/github/spockz/elider/trimmer/LibraryArchiveTemplates.java#L61), [`ArchiveSnapshotTemplateTest`](../elider-core/src/test/java/io/github/spockz/elider/trimmer/ArchiveSnapshotTemplateTest.java#L148)). |
 | Class references encoded only in Kotlin metadata | Not followed | Not traversed by [the reference visitor](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ProGuardReferenceVisitors.java#L49) or [`ArchiveSnapshot`](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ArchiveSnapshot.java#L142). |
 | Kotlin application source (`.kt`, `.kts`) | Not source-scanned | Source-only references (e.g. inlined constants) are not inferred; retain explicitly if needed. |
-| Missing optional Kotlin/coroutine references in a library | Unchanged pass-through fallback | With `elide.trimPassThroughOnUnresolved=true` (default), candidates with unresolved optional references are kept unchanged as pass-through JARs; set `false` to fail closed. Use `elide.trimSkipArtifacts` (or `elide.mrjarStrategy=pass-through` for MRJARs) to configure explicitly. |
+| Missing optional Kotlin/coroutine references in a library | Opt-in pass-through fallback | Trimming fails closed by default. Set `elide.trimPassThroughOnUnresolved=true` to keep candidates with unresolved references unchanged. Use `elide.trimSkipArtifacts` or `elide.mrjarStrategy=pass-through` to configure specific pass-through behavior. |
 | Kotlin metadata in a supplied JDK class table | Unsupported | Rejected on internal runtime-module snapshots. |
 
 ### How much build time and memory does elision add?
 
 * **`elide.trimJars=false`**: Streams retained JARs with ASM without ProGuard pools (`example-spring-boot-app` runs in `~7 s` under `-Xmx512m`).
-* **`elide.trimJars=true`**: Builds ProGuard `ClassPool`s and per-candidate closures (pass-through JARs still stream with ASM). Repeated identical requests hit the `<10 ms` trim cache.
+* **`elide.trimJars=true`**: Builds ProGuard `ClassPool`s and per-candidate closures (pass-through JARs still stream with ASM). The measured same-request warm cache hit was below 10 ms. A fresh Maven request incurs additional setup and validation.
 
 See [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for benchmark methodology; elision remains experimental for production builds.

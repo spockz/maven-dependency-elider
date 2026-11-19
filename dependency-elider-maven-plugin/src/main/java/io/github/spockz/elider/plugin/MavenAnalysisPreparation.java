@@ -237,13 +237,15 @@ final class MavenAnalysisPreparation {
       final Set<String> requiredClasses)
       throws MojoFailureException {
     final ElisionDecision jars =
-        new DependencyPruner()
-            .prune(
-                inventory.candidates(),
-                evidence.index(),
-                evidence.trace(),
-                ElisionArtifactPolicy.config(options.retainedArtifacts(), keep),
-                requiredClasses);
+        inventory.candidates().isEmpty()
+            ? new ElisionDecision(Set.of(), Set.of(), java.util.Map.of(), java.util.Map.of(), 0L)
+            : new DependencyPruner()
+                .prune(
+                    inventory.candidates(),
+                    evidence.index(),
+                    evidence.trace(),
+                    ElisionArtifactPolicy.config(options.retainedArtifacts(), keep),
+                    requiredClasses);
     return ElisionArtifactPolicy.retainNonJarArtifacts(jars, inventory.views().resolvedSnapshots());
   }
 }

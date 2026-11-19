@@ -72,17 +72,27 @@ final class TierArchiveProjector {
       throws IOException {
     final Path source = snapshot.filePath().toAbsolutePath().normalize();
     final boolean needsProjection = inventory.projectedSources().contains(source);
-    final Path analysisPath =
-        needsProjection
-            ? MultiReleaseLibraryProjection.create(
-                source, snapshot.coordinate(), inventory.projectionDirectory(), release)
-            : source;
+    final MultiReleaseCandidateInfo mrInfo = inventory.multiReleaseCandidates().get(snapshot);
+    final Path analysisPath;
+    final Set<String> analysisClasses;
+    if (needsProjection) {
+      if (release == operation.targetRelease()
+          && mrInfo != null
+          && mrInfo.targetProjection() != null) {
+        analysisPath = mrInfo.targetProjection();
+        analysisClasses = mrInfo.targetClasses();
+      } else {
+        analysisPath =
+            MultiReleaseLibraryProjection.create(
+                source, snapshot.coordinate(), inventory.projectionDirectory(), release);
+        analysisClasses = TrimPaths.classNames(analysisPath);
+      }
+    } else {
+      analysisPath = source;
+      analysisClasses = inventory.classesBySourcePath().get(source);
+    }
     paths.put(snapshot, analysisPath);
-    classes.put(
-        snapshot,
-        needsProjection
-            ? TrimPaths.classNames(analysisPath)
-            : inventory.classesBySourcePath().get(source));
+    classes.put(snapshot, analysisClasses);
   }
 
   @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")

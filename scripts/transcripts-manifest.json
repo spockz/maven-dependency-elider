@@ -143,6 +143,81 @@
         "CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18"
       ],
       "maxGraphRows": 3
+    },
+    {
+      "id": "report-forbidden-runtime",
+      "targetDocument": "dependency-elider-maven-plugin/src/site/markdown/usage.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "--offline",
+        "-f",
+        "examples/example-forbidden-code-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report",
+        "-Delide.summaryFile={evidence}/forbidden-code/decode/build/dependency-elider-report.json",
+        "-Delide.failOnForbiddenCode=true"
+      ],
+      "goal": "report",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "Forbidden code OBSERVED VIOLATION: CVE-2026-114938",
+        "evidence=DIRECT_RUNTIME_CALL",
+        "Forbidden code OBSERVED PASS: CVE-2018-11771",
+        "Outcome: DECLARED_CODE_ABSENT"
+      ]
+    },
+    {
+      "id": "analyze-forbidden-dependency",
+      "targetDocument": "dependency-elider-maven-plugin/src/site/markdown/usage.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "--offline",
+        "-f",
+        "examples/example-forbidden-code-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze",
+        "-Dexample.buildDirectory={evidence}/forbidden-code/safe/build",
+        "-Delide.traceFiles={evidence}/forbidden-code/safe/trace.log",
+        "-Delide.cveCacheDirectory={evidence}/forbidden-code/safe/advisories",
+        "-Delide.reportFile={evidence}/forbidden-code/safe/transcript-classes.json",
+        "-Delide.analysisSummaryFile={evidence}/forbidden-code/safe/transcript-analysis.json",
+        "-Delide.productionClassesComplete=true",
+        "-Delide.trimJars=true",
+        "-Delide.failOnForbiddenCode=true"
+      ],
+      "goal": "analyze",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "Forbidden code PREDICTED PASS: CVE-2018-11771",
+        "Outcome: PLANNED_CODE_ABSENT"
+      ]
+    },
+    {
+      "id": "report-forbidden-retained",
+      "targetDocument": "dependency-elider-maven-plugin/src/site/markdown/usage.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "--offline",
+        "-f",
+        "examples/example-forbidden-code-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report",
+        "-Delide.summaryFile={evidence}/forbidden-code/retained/build/dependency-elider-report.json",
+        "-Delide.failOnForbiddenCode=true"
+      ],
+      "goal": "report",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "Forbidden code OBSERVED VIOLATION: CVE-2018-11771",
+        "ZipArchiveInputStream#read(byte[],int,int)",
+        "Method declaration present; enforcement disabled"
+      ]
     }
   ]
 }

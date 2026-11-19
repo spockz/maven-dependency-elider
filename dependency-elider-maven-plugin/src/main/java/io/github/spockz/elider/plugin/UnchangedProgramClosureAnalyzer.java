@@ -115,13 +115,15 @@ final class UnchangedProgramClosureAnalyzer {
     final Set<String> visitedInternal = new LinkedHashSet<>();
     final Set<String> externalDotted = new LinkedHashSet<>();
     Set<String> frontier = task.pendingInternal();
-    while (!frontier.isEmpty()) {
-      final Map<String, Set<String>> perClass =
-          ArchiveClassScanner.scanSelected(task.context().pathFor(task.owner()), frontier);
-      visitedInternal.addAll(frontier);
-      frontier =
-          collectNextFrontier(
-              perClass, tierClasses, task.alreadyScanned(), visitedInternal, externalDotted);
+    try (ArchiveClassScanner.Session scanner =
+        ArchiveClassScanner.open(task.context().pathFor(task.owner()))) {
+      while (!frontier.isEmpty()) {
+        final Map<String, Set<String>> perClass = scanner.scanSelected(frontier);
+        visitedInternal.addAll(frontier);
+        frontier =
+            collectNextFrontier(
+                perClass, tierClasses, task.alreadyScanned(), visitedInternal, externalDotted);
+      }
     }
     return new ScanOutcome(visitedInternal, externalDotted);
   }

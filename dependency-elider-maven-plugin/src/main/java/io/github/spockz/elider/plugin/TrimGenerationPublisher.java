@@ -58,7 +58,9 @@ final class TrimGenerationPublisher {
       List<ArtifactCoordinate> multiRelease,
       List<ArtifactCoordinate> moduleInfo,
       List<ArtifactCoordinate> configured,
-      int analysisRuns) {
+      int analysisRuns,
+      Map<Path, io.github.spockz.elider.trimmer.MultiReleaseArchivePlan.SourceData>
+          multiReleaseSources) {
     EffectivePublication {
       java.util.Objects.requireNonNull(producer, "producer");
       java.util.Objects.requireNonNull(generation, "generation");
@@ -66,14 +68,59 @@ final class TrimGenerationPublisher {
       multiRelease = List.copyOf(multiRelease);
       moduleInfo = List.copyOf(moduleInfo);
       configured = List.copyOf(configured);
+      multiReleaseSources = Map.copyOf(multiReleaseSources);
+    }
+
+    /* package */
+    @SuppressWarnings("PMD.ExcessiveParameterList")
+    EffectivePublication(
+        final EffectiveOutputPlan outputPlan,
+        final List<TrimCandidate> work,
+        final FingerprintSnapshot fingerprint,
+        final Path manifest,
+        final String completeFingerprint,
+        final Path generation,
+        final Optional<CacheProducerIdentity> producer,
+        final List<ArtifactCoordinate> multiRelease,
+        final List<ArtifactCoordinate> moduleInfo,
+        final List<ArtifactCoordinate> configured,
+        final int analysisRuns) {
+      this(
+          outputPlan,
+          work,
+          fingerprint,
+          manifest,
+          completeFingerprint,
+          generation,
+          producer,
+          multiRelease,
+          moduleInfo,
+          configured,
+          analysisRuns,
+          Map.of());
     }
   }
 
   /* package */ record PreparedEffectiveOutputs(
       Map<TrimCandidate, CacheEntry> entries, List<ArtifactTrimRecord> records) {}
 
+  /* package */ record StagedArchive(Path inspectedPath, Path outputPath) {}
+
+  /** Policy check shared by staged and cached effective archive paths. */
+  @FunctionalInterface
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  /* package */ interface OutputCheck {
+    /** Checks archive bytes before publication. */
+    void check(Map<ArtifactCoordinate, StagedArchive> archives) throws IOException;
+  }
+
   /* package */ static TrimResult publishEffectiveOutputs(final EffectivePublication publication)
       throws IOException {
+    return publishEffectiveOutputs(publication, null);
+  }
+
+  /* package */ static TrimResult publishEffectiveOutputs(
+      final EffectivePublication publication, final OutputCheck outputCheck) throws IOException {
     final EffectiveOutputPlan output = publication.outputPlan();
     final FingerprintSnapshot fingerprint = publication.fingerprint();
     Files.createDirectories(publication.generation());
@@ -83,7 +130,9 @@ final class TrimGenerationPublisher {
               publication.work(),
               fingerprint.inputDigests(),
               output,
-              output.prepared().options().trim().workers());
+              output.prepared().options().trim().workers(),
+              publication.multiReleaseSources(),
+              outputCheck);
       final List<CacheEntry> entries =
           JarTrimCache.orderedEntries(
               publication.work(), prepared.entries(), "Missing effective trim cache entry: ");

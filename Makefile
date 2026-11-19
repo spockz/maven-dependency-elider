@@ -22,6 +22,7 @@ PROFILE_TESTS ?= MavenElisionServiceEffectiveOutputCacheTest,ElideMojoTest,Force
 PROFILE_OUTPUT ?= target/elider-test-profile.jfr
 SPRING_BOOT_PROFILE_OUTPUT ?= target/elider-spring-boot-profile.jfr
 JFR_BIN ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/jfr,jfr)
+JAVA_BIN ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/java,java)
 MAKE_JOBS ?= 12
 # Keep aggregate test concurrency bounded across reactor modules, forks, and JUnit classes.
 TEST_MAVEN_THREADS ?= 2
@@ -60,7 +61,7 @@ check-transcripts: test-catalog-reproducibility ## Verify configured command tra
 test-catalog-reproducibility: ## Verify the published example catalog archive has stable bytes
 	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS)" bash ./scripts/test-catalog-reproducibility.sh
 
-check-parallel: java-check lint-markdown test-example-scheduler test-format test-sbom-comparison
+check-parallel: java-check verify-docs test-example-scheduler test-format test-sbom-comparison
 
 java-check:
 	$(MAKE) --no-print-directory lint-java
@@ -167,4 +168,13 @@ serve: site ## Build the documentation site and serve it using Caddy
 	command -v caddy >/dev/null 2>&1 || { echo "Error: caddy is not installed or not in PATH. Please install Caddy: https://caddyserver.com" >&2; exit 1; }
 	caddy file-server --root dependency-elider-maven-plugin/target/site --listen :$(SERVE_PORT)
 
-verify-docs: lint-markdown ## Verify Markdown documentation
+.PHONY: test-site-index verify-benchmarks
+
+test-site-index:
+	bash ./scripts/test-site-index.sh
+
+verify-docs: lint-markdown test-site-index ## Verify Markdown documentation and generated site links
+
+verify-benchmarks: ## Run comparative JMH benchmarks and assert relative speedup/allocation ratios
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl elider-benchmarks -am package -DskipTests -Djacoco.skip=true
+	"$(JAVA_BIN)" -cp elider-benchmarks/target/benchmarks.jar io.github.spockz.elider.plugin.BenchmarkComparisonVerifier

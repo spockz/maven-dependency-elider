@@ -41,14 +41,21 @@ final class TierAnalysisResultBuilder {
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootMap =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
+    final Map<
+            java.nio.file.Path, io.github.spockz.elider.trimmer.MultiReleaseArchivePlan.SourceData>
+        multiReleaseSources =
+            LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     for (final Map.Entry<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> entry :
         candidates.entrySet()) {
       final TierCandidate candidate = entry.getValue();
       rootMap.put(entry.getKey(), candidate.roots());
       if (candidate.isMultiRelease()) {
-        final Set<String> upper =
-            inventory.multiReleaseCandidates().get(entry.getKey()).versionedClasses();
-        upperClasses.put(entry.getKey().coordinate(), upper);
+        final TierInventoryReader.MultiReleaseCandidateInfo mrInfo =
+            inventory.multiReleaseCandidates().get(entry.getKey());
+        upperClasses.put(entry.getKey().coordinate(), mrInfo.versionedClasses());
+        if (mrInfo.sourceData() != null) {
+          multiReleaseSources.put(mrInfo.sourceData().sourcePath(), mrInfo.sourceData());
+        }
       }
     }
     return TrimRootPlanner.inMemoryResult(
@@ -61,6 +68,7 @@ final class TierAnalysisResultBuilder {
             inventory.tiers(),
             inventory.platformSnapshots(),
             upperClasses)
+        .withMultiReleaseSources(multiReleaseSources)
         .withPassThroughIdentities(passThroughIdentities)
         .withLiveProgramClasses(closure.liveProgramClasses())
         .withForcedUnchangedCoordinates(operation.forcedUnchanged());

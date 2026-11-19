@@ -128,8 +128,14 @@ final class ElisionReachabilityEngine {
 
   /* package */ static Analysis finishEffectiveOutputs(final EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
+    return finishEffectiveOutputs(effective, null);
+  }
+
+  /* package */ static Analysis finishEffectiveOutputs(
+      final EffectiveAnalysis effective, final TrimGenerationPublisher.OutputCheck outputCheck)
+      throws IOException, MojoFailureException {
     return MavenEffectiveAnalysisReport.create(
-        effective, MavenDependencyTrimmer.stageEffectiveOutputs(effective));
+        effective, MavenDependencyTrimmer.stageEffectiveOutputs(effective, outputCheck));
   }
 
   private static ResolverArtifactGraphProjection projection(

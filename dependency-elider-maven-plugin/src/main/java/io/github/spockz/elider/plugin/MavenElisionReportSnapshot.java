@@ -48,7 +48,9 @@ record MavenElisionReportSnapshot(
     int inputArtifactCount,
     String sourceAttributionFallback,
     @com.fasterxml.jackson.annotation.JsonIgnore
-        List<MavenVulnerabilityMappingCatalogResolver.Adoption> catalogAdoptions) {
+        List<MavenVulnerabilityMappingCatalogResolver.Adoption> catalogAdoptions,
+    @com.fasterxml.jackson.annotation.JsonIgnore
+        List<ForbiddenCodeAssessment> forbiddenCodeAssessments) {
   /** Distinguishes forecast from applied output. */
   enum Mode {
     ANALYSIS,
@@ -59,6 +61,12 @@ record MavenElisionReportSnapshot(
   static final int SCHEMA_VERSION = 1;
 
   MavenElisionReportSnapshot {
+    forbiddenCodeAssessments =
+        forbiddenCodeAssessments == null
+            ? List.of()
+            : forbiddenCodeAssessments.stream()
+                .sorted(Comparator.comparing(ForbiddenCodeAssessment::toString))
+                .toList();
     genericFindings =
         genericFindings == null
             ? List.of()
@@ -242,6 +250,7 @@ record MavenElisionReportSnapshot(
         Mode.APPLIED,
         wholeArtifactsDropped + trimmedArtifacts.size(),
         null,
+        List.of(),
         List.of());
   }
 
@@ -380,7 +389,8 @@ record MavenElisionReportSnapshot(
         Mode.ANALYSIS,
         prediction.inputArtifacts().size(),
         prediction.evidence().sourceAttributionFallback(),
-        assessment.catalogAdoptions());
+        assessment.catalogAdoptions(),
+        List.of());
   }
 
   static MavenElisionReportSnapshot from(
@@ -459,7 +469,8 @@ record MavenElisionReportSnapshot(
         Mode.APPLIED,
         analysis.artifacts().resolvedSnapshots().size(),
         analysis.evidence().sourceAttributionFallback(),
-        vulnerabilityAssessment == null ? List.of() : vulnerabilityAssessment.catalogAdoptions());
+        vulnerabilityAssessment == null ? List.of() : vulnerabilityAssessment.catalogAdoptions(),
+        List.of());
   }
 
   MavenElisionReportSnapshot withGenericFindings(
@@ -498,7 +509,42 @@ record MavenElisionReportSnapshot(
         mode,
         inputArtifactCount,
         sourceAttributionFallback,
-        adoptions);
+        adoptions,
+        forbiddenCodeAssessments);
+  }
+
+  MavenElisionReportSnapshot withForbiddenCodeAssessments(
+      final List<ForbiddenCodeAssessment> assessments) {
+    return new MavenElisionReportSnapshot(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        executionEnvironment,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        policy,
+        exclusionReview,
+        appliedBans,
+        toleratedDuplicates,
+        genericFindings,
+        sourceObservations,
+        mode,
+        inputArtifactCount,
+        sourceAttributionFallback,
+        catalogAdoptions,
+        assessments);
   }
 
   MavenElisionReportSnapshot withExclusionReview(final ExclusionReview review) {
@@ -547,7 +593,8 @@ record MavenElisionReportSnapshot(
         mode,
         inputArtifactCount,
         sourceAttributionFallback,
-        catalogAdoptions);
+        catalogAdoptions,
+        forbiddenCodeAssessments);
   }
 
   static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {

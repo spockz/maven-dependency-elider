@@ -148,6 +148,10 @@ abstract class AbstractElisionMojo extends PluginCacheMojoSupport {
   /** Explicit POM vulnerability mappings override cache entries. */
   @Parameter protected List<VulnerabilityMappingConfig> vulnerabilityMappings;
 
+  /** Fails the goal when a forbidden symbol survives. */
+  @Parameter(property = "elide.failOnForbiddenCode", defaultValue = DEFAULT_FALSE)
+  protected boolean failOnForbiddenCode;
+
   /** Pinned G:A:V[:type[:classifier]] catalogs, resolved only as assessment data. */
   @Parameter(property = "elide.vulnerabilityMappingCatalogs")
   protected List<String> vulnerabilityMappingCatalogs;

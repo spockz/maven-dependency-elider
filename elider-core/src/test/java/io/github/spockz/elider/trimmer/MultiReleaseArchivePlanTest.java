@@ -14,7 +14,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -39,7 +41,120 @@ final class MultiReleaseArchivePlanTest {
   private static final String API_SOURCE =
       "package fixture; public class Api { public static String value() { return \"VALUE\"; } }";
 
+  private static final Map<String, byte[]> COMPILED_BYTES = new ConcurrentHashMap<>();
+
   @TempDir private Path temporaryDirectory;
+
+  @Test
+  void inspectsSourceOnceAndProducesIdenticalPlansAcrossInitialAndFinalSelections()
+      throws Exception {
+    final Fixture fixture = multiReleaseFixture("shared-source", "VALUE");
+    final MultiReleaseArchivePlan.SourceData sourceData =
+        MultiReleaseArchivePlan.inspectSource(fixture.jar());
+    final MultiReleaseArchivePlan directInitial =
+        MultiReleaseArchivePlan.create(fixture.jar(), 11, Set.of(), Set.of());
+    final MultiReleaseArchivePlan sharedInitial =
+        MultiReleaseArchivePlan.create(sourceData, 11, Set.of(), Set.of());
+    final MultiReleaseArchivePlan directFinal =
+        MultiReleaseArchivePlan.create(
+            fixture.jar(), 11, Set.of("fixture.Api"), Set.of("fixture.Drop"));
+    final MultiReleaseArchivePlan sharedFinal =
+        MultiReleaseArchivePlan.create(
+            sourceData, 11, Set.of("fixture.Api"), Set.of("fixture.Drop"));
+
+    assertAll(
+        "Shared MRJAR SourceData equivalence",
+        () -> assertThat(sharedInitial.pluginView()).isEqualTo(directInitial.pluginView()),
+        () -> assertThat(sharedFinal.pluginView()).isEqualTo(directFinal.pluginView()),
+        () -> assertThat(sharedFinal.targetClasses()).isEqualTo(directFinal.targetClasses()),
+        () ->
+            assertThat(sharedFinal.retainedTargetClasses())
+                .isEqualTo(directFinal.retainedTargetClasses()),
+        () -> assertThat(sharedFinal.sourceSha256()).isEqualTo(directFinal.sourceSha256()));
+  }
+
+  @Test
+  void rejectsDigestsFromDifferentArchiveAndAcceptsEquivalentPathSpellings() throws Exception {
+    final Fixture fixtureA = multiReleaseFixture("source-a", "SOURCE_A");
+    final Fixture fixtureB = multiReleaseFixture("source-b", "SOURCE_B");
+    final io.github.spockz.elider.model.ArtifactDigests digestsA =
+        io.github.spockz.elider.model.ArtifactDigests.read(fixtureA.jar());
+    final io.github.spockz.elider.model.ArtifactDigests digestsB =
+        io.github.spockz.elider.model.ArtifactDigests.read(fixtureB.jar());
+
+    assertThatThrownBy(() -> MultiReleaseArchivePlan.inspectSource(fixtureA.jar(), digestsB))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("different path");
+
+    final Path equivalentSpelling =
+        fixtureA.jar().getParent().resolve(".").resolve(fixtureA.jar().getFileName());
+    final MultiReleaseArchivePlan.SourceData shared =
+        MultiReleaseArchivePlan.inspectSource(equivalentSpelling, digestsA);
+    final MultiReleaseArchivePlan plan =
+        MultiReleaseArchivePlan.create(shared, 11, Set.of("fixture.Api"), Set.of("fixture.Drop"));
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer.TrimAnalysis(
+            3, Set.of(API_NAME, "fixture/UpperOnly"), Set.of(API_NAME, "fixture/UpperOnly"));
+    final Path output = temporaryDirectory.resolve("source-a-output.jar");
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareMultiRelease(
+            fixtureA.jar(),
+            output,
+            ArtifactCoordinate.of("org.example", "source-a", "1.0.0"),
+            analysis,
+            plan);
+    final ArtifactTrimRecord record;
+    try {
+      record = sanitizer.publish(prepared);
+    } finally {
+      sanitizer.discard(prepared);
+    }
+
+    assertAll(
+        "SourceData digest path validation and provenance",
+        () -> assertThat(shared.digests()).isSameAs(digestsA),
+        () -> assertThat(record.originalSha256()).isEqualTo(digestsA.sha256()),
+        () -> assertThat(record.originalSha1()).isEqualTo(digestsA.sha1()));
+  }
+
+  @Test
+  void reusesSourceInspectionAndDigestsAcrossPlanningAndStaging() throws Exception {
+    final Fixture fixture = multiReleaseFixture("reuse-contract", "REUSE");
+    final MultiReleaseArchivePlan.SourceData sourceData =
+        MultiReleaseArchivePlan.inspectSource(fixture.jar());
+    final MultiReleaseArchivePlan initialPlan =
+        MultiReleaseArchivePlan.create(sourceData, 11, Set.of(), Set.of());
+    final MultiReleaseArchivePlan finalPlan =
+        MultiReleaseArchivePlan.create(
+            sourceData, 11, Set.of("fixture.Api"), Set.of("fixture.Drop"));
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer.TrimAnalysis(
+            3, Set.of(API_NAME, "fixture/UpperOnly"), Set.of(API_NAME, "fixture/UpperOnly"));
+    final Path output = temporaryDirectory.resolve("reuse-contract-output.jar");
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareMultiRelease(
+            fixture.jar(),
+            output,
+            ArtifactCoordinate.of("org.example", "reuse-contract", "1.0.0"),
+            analysis,
+            finalPlan);
+    final ArtifactTrimRecord record;
+    try {
+      record = sanitizer.publish(prepared);
+    } finally {
+      sanitizer.discard(prepared);
+    }
+
+    assertAll(
+        "SourceData digests and inspection are reused across planning and staging",
+        () -> assertThat(initialPlan.sourceDigests()).isSameAs(sourceData.digests()),
+        () -> assertThat(finalPlan.sourceDigests()).isSameAs(sourceData.digests()),
+        () -> assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed"),
+        () -> assertThat(record.originalSha256()).isEqualTo(sourceData.digests().sha256()),
+        () -> assertThat(record.originalSha1()).isEqualTo(sourceData.digests().sha1()));
+  }
 
   @Test
   void elevatesTargetTierTrimsBaseAndPreservesHigherTierClosureEntries() throws Exception {
@@ -550,24 +665,43 @@ final class MultiReleaseArchivePlanTest {
 
   private Path compileClass(final String name, final int release, final String source)
       throws IOException {
+    final String cacheKey = "class:" + release + ":" + source;
+    final byte[] compiled = COMPILED_BYTES.get(cacheKey);
+    final Path outputDirectory = temporaryDirectory.resolve(name + "-classes");
+    final Path classFile = outputDirectory.resolve("fixture").resolve(className(source) + ".class");
+    if (compiled != null) {
+      Files.createDirectories(classFile.getParent());
+      Files.write(classFile, compiled);
+      return classFile;
+    }
     final Path sourcePath =
         temporaryDirectory.resolve(name).resolve("fixture/" + className(source) + ".java");
-    final Path outputDirectory = temporaryDirectory.resolve(name + "-classes");
     Files.createDirectories(sourcePath.getParent());
     Files.writeString(sourcePath, source);
     CompilationFixtureSupport.compile(
         outputDirectory, List.of(sourcePath), "--release", Integer.toString(release));
-    return outputDirectory.resolve("fixture").resolve(className(source) + ".class");
+    COMPILED_BYTES.putIfAbsent(cacheKey, Files.readAllBytes(classFile));
+    return classFile;
   }
 
   private Path compileModule(final String name, final int release) throws IOException {
-    final Path sourcePath = temporaryDirectory.resolve(name).resolve("module-info.java");
+    final String source = "module fixture.module {}\n";
+    final String cacheKey = "module:" + release + ":" + source;
+    final byte[] compiled = COMPILED_BYTES.get(cacheKey);
     final Path outputDirectory = temporaryDirectory.resolve(name + "-classes");
+    final Path classFile = outputDirectory.resolve("module-info.class");
+    if (compiled != null) {
+      Files.createDirectories(classFile.getParent());
+      Files.write(classFile, compiled);
+      return classFile;
+    }
+    final Path sourcePath = temporaryDirectory.resolve(name).resolve("module-info.java");
     Files.createDirectories(sourcePath.getParent());
-    Files.writeString(sourcePath, "module fixture.module {}\n");
+    Files.writeString(sourcePath, source);
     CompilationFixtureSupport.compile(
         outputDirectory, List.of(sourcePath), "--release", Integer.toString(release));
-    return outputDirectory.resolve("module-info.class");
+    COMPILED_BYTES.putIfAbsent(cacheKey, Files.readAllBytes(classFile));
+    return classFile;
   }
 
   private Path compileNestedClass(final String name, final int release, final String methods)

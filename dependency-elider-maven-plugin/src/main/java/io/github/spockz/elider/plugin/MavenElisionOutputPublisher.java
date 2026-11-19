@@ -72,7 +72,8 @@ final class MavenElisionOutputPublisher {
     final Optional<String> staleVexDigest = staleVexDigest(request, assessment);
     final MavenElisionReportSnapshot reportSnapshot =
         MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment)
-            .withExclusionReview(exclusionReview);
+            .withExclusionReview(exclusionReview)
+            .withForbiddenCodeAssessments(request.forbiddenCode());
     writeReports(request, plan, reportSnapshot, summary, baselineInventory, inventory, assessment);
     cleanupStaleVex(request, assessment, staleVexDigest);
     final List<Path> generated =
@@ -131,7 +132,8 @@ final class MavenElisionOutputPublisher {
             request.vulnerabilityMappings(),
             request.analysis(),
             inventory,
-            request.snykConfiguration());
+            request.snykConfiguration(),
+            request.forbiddenCode());
   }
 
   private static Optional<String> staleVexDigest(
@@ -350,11 +352,13 @@ final class MavenElisionOutputPublisher {
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
       MavenBanPlan banPlan,
-      MavenArtifactViewBinding applicationBinding) {
+      MavenArtifactViewBinding applicationBinding,
+      List<ForbiddenCodeAssessment> forbiddenCode) {
     Request {
       java.util.Objects.requireNonNull(vulnerabilityMappings, "vulnerabilityMappings");
       java.util.Objects.requireNonNull(snykConfiguration, "snykConfiguration");
       java.util.Objects.requireNonNull(banPlan, "banPlan");
+      forbiddenCode = List.copyOf(forbiddenCode);
     }
   }
 }

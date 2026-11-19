@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Isolates the ADR-0015 policy variants and their selected dependency version. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.spockz</groupId>
+        <artifactId>examples</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <artifactId>example-forbidden-code-app</artifactId>
+    <name>Example: Forbidden Code at the Production Boundary</name>
+
+    <properties>
+        <example.variant>Plain</example.variant>
+        <example.buildDirectory>${project.basedir}/target</example.buildDirectory>
+        <commons-compress.version>1.17</commons-compress.version>
+        <maven.compiler.release>${java.specification.version}</maven.compiler.release>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>${commons-compress.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <directory>${example.buildDirectory}</directory>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/ArchiveExample.java</include>
+                        <include>**/${example.variant}Application.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>io.github.spockz</groupId>
+                <artifactId>dependency-elider-maven-plugin</artifactId>
+                <version>${project.version}</version>
+                <configuration>
+                    <vulnerabilityMappings>
+                        <vulnerabilityMapping>
+                            <cveId>CVE-2026-114938</cveId>
+                            <componentKind>JAVA_RUNTIME</componentKind>
+                            <versionRangeSpec>(,)</versionRangeSpec>
+                            <sourceAdvisoryUrl>https://shiro.apache.org/blog/2026/11/apache-shiro-java4shell.html</sourceAdvisoryUrl>
+                            <forbiddenSymbols>
+                                <symbol>java.util.Base64.Decoder#decode(byte[])</symbol>
+                            </forbiddenSymbols>
+                        </vulnerabilityMapping>
+                        <vulnerabilityMapping>
+                            <cveId>CVE-2018-11771</cveId>
+                            <groupId>org.apache.commons</groupId>
+                            <artifactId>commons-compress</artifactId>
+                            <versionRangeSpec>[1.7,1.18)</versionRangeSpec>
+                            <assertsAffected>true</assertsAffected>
+                            <sourceAdvisoryUrl>https://commons.apache.org/proper/commons-compress/security.html</sourceAdvisoryUrl>
+                            <forbiddenSymbols>
+                                <symbol>org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int)</symbol>
+                            </forbiddenSymbols>
+                        </vulnerabilityMapping>
+                    </vulnerabilityMappings>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>elide-forbidden-example</id>
+            <properties>
+                <elide.skip>false</elide.skip>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>io.github.spockz</groupId>
+                        <artifactId>dependency-elider-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>observe-forbidden-code</id>
+                                <phase>process-classes</phase>
+                                <goals><goal>elide</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

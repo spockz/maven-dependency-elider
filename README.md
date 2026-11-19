@@ -192,6 +192,9 @@ The `elide` goal writes two structured JSON records:
 
 The persisted Elide summary records ban outcomes in `appliedBans`. Its `rawDroppedCoordinates` metric excludes policy-forced absences, while total absent-artifact metrics include them.
 
+Both summaries save explicit forbidden-code observations in `forbiddenCodeAssessments`. The
+`report` goal replays the saved outcomes and evidence.
+
 Duplicate classes fail analysis by default. Use `elide.retainDuplicateClassOwners` to accept
 specific class names or globs and retain every provider JAR whole, or
 `elide.trimDuplicateClassOwners` to keep the duplicates in every provider while trimming unused
@@ -247,6 +250,19 @@ For detailed configuration parameters, see [Plugin Usage](dependency-elider-mave
 ---
 
 ## Vulnerability Findings and Code Evidence
+
+Opt in to forbidden-code assessment through `vulnerabilityMappings` in the POM. A rule names an
+exact class, an exact method signature, or an explicit class wildcard in a Maven artifact, the
+project's production output, or the target Java runtime. `analyze` reports planned outcomes.
+`elide` checks effective staged, cached, and unchanged outputs before publishing Maven views.
+Enable `-Delide.failOnForbiddenCode=true` to fail on a violation. Incomplete evidence is reported
+as `UNKNOWN`. [Forbidden-code configuration](dependency-elider-maven-plugin/src/site/markdown/usage.md#forbidden-code-policy)
+
+The runnable [forbidden-code examples](dependency-elider-maven-plugin/src/site/markdown/usage.md#runnable-forbidden-code-examples)
+show a violation for an exact direct Java runtime call and an unknown result when that call
+is absent. The direct-call check also works when the target runtime image is unavailable. The
+Commons Compress example checks an omitted class, a retained method, and a fixed dependency
+version outside the policy range.
 
 Software Composition Analysis (SCA) suffers from a **four-tier granularity mismatch**:
 
@@ -674,7 +690,7 @@ Process exit status: 0
 [INFO]   - commons-codec:commons-codec:jar:1.21.0 (compile): 393.06 KiB original JAR, 136 class entries, 475.86 KiB
 [INFO] Raw trace decision drops before graph safety: 6
 [INFO] Applied bans: none
-[INFO] Program classes pruned from retained JARs: 3923 (uncompressed omitted .class payload bytes: 8.99 MiB; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 3882 (uncompressed omitted .class payload bytes: 8.94 MiB; excludes module descriptors and archive metadata)
 [INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.21.5 (runtime): 31 classes, 136.62 KiB
 [INFO]   - com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime): 22 classes, 15.44 KiB
 [INFO]   - com.google.code.findbugs:jsr305:jar:3.0.2 (runtime): 24 classes, 14.44 KiB
@@ -693,10 +709,7 @@ Process exit status: 0
 [INFO]   - org.springframework.boot:spring-boot-mail:jar:4.1.1 (compile): 2 classes, 451 B
 [INFO]   - org.springframework.boot:spring-boot-micrometer-metrics:jar:4.1.1 (compile): 35 classes, 8.64 KiB
 [INFO]   - org.springframework.boot:spring-boot-micrometer-observation:jar:4.1.1 (compile): 1 classes, 247 B
-[INFO]   - org.springframework.boot:spring-boot-servlet:jar:4.1.1 (compile): 11 classes, 9.01 KiB
-[INFO]   - org.springframework.boot:spring-boot-tomcat:jar:4.1.1 (compile): 14 classes, 13.77 KiB
 [INFO]   - org.springframework.boot:spring-boot-web-server:jar:4.1.1 (compile): 21 classes, 46.11 KiB
-[INFO]   - org.springframework.boot:spring-boot-webmvc:jar:4.1.1 (compile): 16 classes, 25.79 KiB
 [INFO]   - org.springframework:spring-webmvc:jar:7.0.9 (compile): 142 classes, 524.72 KiB
 [INFO]   - org.webjars:webjars-locator-core:jar:0.59 (runtime): 1 classes, 11.43 KiB
 [INFO]   - org.xerial.snappy:snappy-java:jar:1.1.10.7 (runtime): 40 classes, 119.25 KiB
@@ -2319,7 +2332,7 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=a1339af5e23c58c06ca8ebb86dda095173d3f52de8363284fce031014bf82ff2, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
@@ -2333,7 +2346,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.luben:zstd-jni:jar:1.5.7-18 (runtime) {nodeId=n6} [EFFECTIVE_DROP]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n9} [RETAINED, CLASS_TRIMMED]
-[INFO]   ... 112 dependency graph rows elided (sha256:3d7f8a05e6f8c18cdc4b9bcd6c7d85edab3103e5f7b633e97e8563c0692e0a3c)
+[INFO]   ... 112 dependency graph rows elided (sha256:08ac720361a029cfccaeef325fee89afb43d221182e3a5ade87648254fca1d41)
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -3415,7 +3428,7 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=a1339af5e23c58c06ca8ebb86dda095173d3f52de8363284fce031014bf82ff2, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths

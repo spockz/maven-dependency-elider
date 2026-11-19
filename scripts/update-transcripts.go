@@ -58,6 +58,11 @@ type commandResult struct {
 var (
 	snapshotAt                = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: (?:analysis prediction|last successful elide run) at )[^\s]+`)
 	runtimeRelease            = regexp.MustCompile(`(?m)^(\[INFO\] Elider runtime JDK release: )\d+$`)
+	targetRelease             = regexp.MustCompile(`(?m)^\[INFO\] Analysis target JDK release: (\d+)$`)
+	forbiddenRuntimeIdentity  = regexp.MustCompile(`( in JAVA_RUNTIME ).*?( \((?:Available runtime evidence|Exact invocation found))`)
+	forbiddenRuntimeVersion   = regexp.MustCompile(`(, version=)[^,]+(, targetRelease=)`)
+	forbiddenRuntimeImage     = regexp.MustCompile(`(, provider=).*?(, provenance=)`)
+	trimGeneration            = regexp.MustCompile(`(/elided-artifacts/\.generations/)[0-9a-f]{64}/`)
 	buildTime                 = regexp.MustCompile(`(?m)^(\[INFO\] Total time:)\s*.*$`)
 	finishedAt                = regexp.MustCompile(`(?m)^(\[INFO\] Finished at:)\s*.*$`)
 	cacheHitTime              = regexp.MustCompile(`maximum validated hit [0-9.]+ ms`)
@@ -627,12 +632,29 @@ func normalizeOutput(output, root, evidencePath string) []string {
 	root = filepath.ToSlash(filepath.Clean(root))
 	evidencePath = filepath.ToSlash(filepath.Clean(evidencePath))
 	lines := strings.Split(strings.TrimRight(output, "\r\n"), "\n")
+	activeTarget := ""
+	if forbiddenRuntimeIdentity.MatchString(output) {
+		target := targetRelease.FindStringSubmatch(output)
+		if len(target) == 2 && strings.Contains(output, "[INFO] Elider runtime JDK release: "+target[1]+"\n") {
+			activeTarget = target[1]
+		}
+	}
 	result := make([]string, 0, len(lines))
 	for _, line := range lines {
 		line = strings.ReplaceAll(line, evidencePath, "<TEMP_DIR>")
 		line = strings.ReplaceAll(line, root, "<PROJECT_ROOT>")
 		line = snapshotAt.ReplaceAllString(line, "${1}<TIMESTAMP>")
 		line = runtimeRelease.ReplaceAllString(line, "${1}<RUNTIME_RELEASE>")
+		line = forbiddenRuntimeIdentity.ReplaceAllString(line, "${1}<RUNTIME_IDENTITY>${2}")
+		if strings.Contains(line, "evidence=RUNTIME_REACHABILITY") || strings.Contains(line, "evidence=DIRECT_RUNTIME_CALL") {
+			line = forbiddenRuntimeVersion.ReplaceAllString(line, "${1}<RUNTIME_VERSION>${2}")
+			line = forbiddenRuntimeImage.ReplaceAllString(line, "${1}<RUNTIME_IMAGE>${2}")
+		}
+		if activeTarget != "" {
+			line = strings.ReplaceAll(line, "Analysis target JDK release: "+activeTarget, "Analysis target JDK release: <RUNTIME_RELEASE>")
+			line = strings.ReplaceAll(line, ", targetRelease="+activeTarget+",", ", targetRelease=<RUNTIME_RELEASE>,")
+		}
+		line = trimGeneration.ReplaceAllString(line, "${1}<TRIM_GENERATION>/")
 		line = buildTime.ReplaceAllString(line, "${1} <BUILD_TIME>")
 		line = finishedAt.ReplaceAllString(line, "${1} <TIMESTAMP>")
 		line = cacheHitTime.ReplaceAllString(line, "maximum validated hit <CACHE_HIT_TIME>")

@@ -19,7 +19,8 @@ final class MavenElisionOutputLogger {
       throws IOException {
     final MavenElisionReportSnapshot reportSnapshot =
         MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment)
-            .withExclusionReview(exclusionReview);
+            .withExclusionReview(exclusionReview)
+            .withForbiddenCodeAssessments(request.forbiddenCode());
     final ElisionAnalysisModel.Analysis analysis = request.analysis();
     final Log log = request.log();
     dynamicRootWarnings(log, analysis.evidence());

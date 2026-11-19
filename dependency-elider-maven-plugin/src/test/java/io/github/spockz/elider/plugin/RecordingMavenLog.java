@@ -18,6 +18,9 @@ final class RecordingMavenLog implements Log {
   /** Warning lines captured from the Mojo. */
   private final List<String> recordedWarnings = new ArrayList<>();
 
+  /** Errors captured from a failed goal. */
+  private final List<String> recordedErrors = new ArrayList<>();
+
   /** Debug lines captured by scenarios that assert proof abstention reasons. */
   private final List<String> recordedDebugMessages = new ArrayList<>();
 
@@ -45,6 +48,11 @@ final class RecordingMavenLog implements Log {
   @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
   List<String> warnings() {
     return List.copyOf(recordedWarnings);
+  }
+
+  @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
+  List<String> errors() {
+    return List.copyOf(recordedErrors);
   }
 
   @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
@@ -114,11 +122,13 @@ final class RecordingMavenLog implements Log {
 
   @Override
   public boolean isErrorEnabled() {
-    return false;
+    return true;
   }
 
   @Override
-  public void error(final CharSequence content) {}
+  public void error(final CharSequence content) {
+    recordedErrors.add(content.toString());
+  }
 
   @Override
   public void error(final CharSequence content, final Throwable error) {}

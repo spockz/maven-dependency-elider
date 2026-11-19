@@ -15,7 +15,7 @@ The agreed reporting direction is to distinguish potential scanner findings proj
 ## Record
 
 - Opened: 2026-11-04
-- Last updated: 2026-11-09
+- Last updated: 2026-11-19
 - Evidence snapshot: 2026-11-04; tool and source behavior below is as checked on that date.
 - Related decisions: [ADR-0006](../adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), [ADR-0013](../adr/0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md), [RQ-0008](RQ-0008-osv-sbom-comparison-and-vex-evidence.md), [RQ-0011](RQ-0011-persisted-report-scope-and-vulnerability-telemetry.md), [RQ-0013](RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md), [RQ-0015](RQ-0015-actionable-advisory-gap-detection-and-heuristic-elision-candidates.md), and [RQ-0019](RQ-0019-developer-actionable-advisory-workflows-and-ide-quick-fixes.md).
 
@@ -896,3 +896,20 @@ and JDK 25. The test harness removes its temporary proof reports after successfu
 the checked-in evidence is the deterministic assertion and successful run, not a retained
 transient report. These example checks do not change the scanner database coverage measurements
 recorded above.
+
+## 2026-11-19: Forbidden-code and runtime advisory follow-up
+
+[ADR-0015](../adr/0015-forbidden-code-policy-and-evidence-bounded-cve-assessment.md) adopts explicit forbidden-code assessment using existing evidence first. Investigate how CVE records, version applicability and reviewed entry-point mappings can represent Java runtime components and non-Maven identities without fabricating Maven coordinates. Use CVE-2026-114938 as a research case: record evidence for the complete relevant Java entry points, affected runtime implementations and versions, and the role of JVM intrinsic and deployment conditions. Separate an observed reference, an eligible physical-absence proof, a bounded reachability observation and scanner projections; none alone proves exploitation. Record primary-source snapshots and dates before promoting any candidate mapping. Method-reachability proof research lives in [RQ-0013](RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md), and catalog policy adoption in [RQ-0021](RQ-0021-centrally-distributed-vulnerability-mapping-dependencies.md).
+
+### 2026-11-19: Two concrete example mappings
+
+ADR-0015 now specifies a Java4Shell runtime example and a Commons Compress method example, CVE-2018-11771. The [Apache security report](https://commons.apache.org/proper/commons-compress/security.html) identifies an end-of-stream flaw in `ZipArchiveInputStream.read` and the fix in 1.18; the [CVE record](https://www.cve.org/CVERecord?id=CVE-2018-11771) states the affected 1.7 through 1.17 range. Verify the fixture's exact bytecode overload and whether class-omission proof meets existing VEX gates before claiming a result. A selected method is not necessarily a complete list of vulnerability paths. The Java4Shell public decoder rule is illustrative and reports runtime reachability as unknown in the first slice; it is not a reviewed complete affected-runtime mapping.
+
+### 2026-11-19: Direct invocation evidence in the runnable fixtures
+
+The [example harness](../../examples/verify-forbidden-code.sh) runs both mappings in isolated
+outputs. With the amended ADR-0015, the Java4Shell decoder variant records a policy violation
+for the exact public overload, including with a Java 17 target whose runtime image is unavailable.
+Its plain-text variant remains unknown. Runtime affectedness and indirect paths still require
+independent evidence. The Commons Compress variant continues
+to check the selected overload, output JAR bytes, the fixed-version boundary, and VEX eligibility.

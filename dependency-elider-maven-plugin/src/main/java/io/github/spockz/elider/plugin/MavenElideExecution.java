@@ -8,6 +8,7 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.EffectiveAnalysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.PreparedAnalysis;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecution;
@@ -120,9 +121,7 @@ final class MavenElideExecution {
     final MavenProject project = configuration.lifecycle().project();
     final PreparedAnalysis prepared = service.prepare(project, configuration.analysisOptions());
     final EffectiveAnalysis effective = service.finishAnalysis(prepared);
-    final Analysis analysis = service.finishEffectiveOutputs(effective);
-    configuration.publication().afterGenerationStaging().run(analysis);
-    publish(configuration, service, analysis, MavenBanPlan.empty(), null);
+    finishAndPublish(configuration, service, effective, MavenBanPlan.empty(), null);
   }
 
   private static void executeBannedAnalysis(
@@ -142,22 +141,30 @@ final class MavenElideExecution {
           MavenArtifactViewBinding.bind(liveSnapshot, requestContext);
       plan.verifyAuditFresh(project, lifecycle.session());
       final EffectiveAnalysis effective = service.finishAnalysis(preparation.analysis());
-      final Analysis unboundAnalysis = service.finishEffectiveOutputs(effective);
-      configuration.publication().afterGenerationStaging().run(unboundAnalysis);
-      final Analysis analysis = applicationBinding.bindAnalysis(unboundAnalysis);
-      publish(configuration, service, analysis, plan, applicationBinding);
+      finishAndPublish(configuration, service, effective, plan, applicationBinding);
     }
   }
 
-  private static void publish(
+  private static void finishAndPublish(
       final MavenElideExecutionConfiguration configuration,
       final MavenElisionService service,
-      final Analysis analysis,
+      final EffectiveAnalysis effective,
       final MavenBanPlan banPlan,
       final MavenArtifactViewBinding applicationBinding)
       throws IOException, MojoFailureException {
     final MavenElideExecutionConfiguration.Lifecycle lifecycle = configuration.lifecycle();
     final MavenElideExecutionConfiguration.Publication publication = configuration.publication();
+    final ForbiddenCodeCheck check =
+        publication.vulnerabilityMappings().forbiddenRules().isEmpty()
+            ? null
+            : new ForbiddenCodeCheck(effective, publication);
+    final Analysis unboundAnalysis =
+        ElisionReachabilityEngine.finishEffectiveOutputs(effective, check);
+    publication.afterGenerationStaging().run(unboundAnalysis);
+    final Analysis analysis =
+        applicationBinding == null
+            ? unboundAnalysis
+            : applicationBinding.bindAnalysis(unboundAnalysis);
     MavenElisionOutputPublisher.publish(
         new MavenElisionOutputPublisher.Request(
             lifecycle.project(),
@@ -173,6 +180,42 @@ final class MavenElideExecution {
             publication.preconditionProofEnabled(),
             publication.assumeConventionalJavaSourceLayout(),
             banPlan,
-            applicationBinding));
+            applicationBinding,
+            check == null ? List.of() : check.results()));
+  }
+
+  @SuppressWarnings(
+      "PMD.CommentRequired") // Carries one invocation's verified rows into publication.
+  private static final class ForbiddenCodeCheck implements TrimGenerationPublisher.OutputCheck {
+    private final EffectiveAnalysis effective;
+    private final MavenElideExecutionConfiguration.Publication publication;
+    private List<ForbiddenCodeAssessment> observations = List.of();
+
+    private ForbiddenCodeCheck(
+        final EffectiveAnalysis effective,
+        final MavenElideExecutionConfiguration.Publication publication) {
+      this.effective = effective;
+      this.publication = publication;
+    }
+
+    private List<ForbiddenCodeAssessment> results() {
+      return observations;
+    }
+
+    @Override
+    public void check(
+        final Map<
+                io.github.spockz.elider.model.ArtifactCoordinate,
+                TrimGenerationPublisher.StagedArchive>
+            archives)
+        throws IOException {
+      observations =
+          MavenForbiddenCodeAssessment.observe(
+              effective,
+              publication.vulnerabilityMappings(),
+              publication.failOnForbiddenCode(),
+              archives);
+      MavenForbiddenCodeAssessment.enforce(observations, publication.log());
+    }
   }
 }

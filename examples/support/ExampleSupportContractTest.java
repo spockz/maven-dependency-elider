@@ -116,20 +116,26 @@ public final class ExampleSupportContractTest {
     final Path reportPath = Files.createTempFile("example-spring-drop-", ".json");
     try {
       final ObjectNode report = JSON.createObjectNode();
-      report.putArray("droppedArtifacts")
-          .addObject()
-          .put("coordinate", "commons-codec:commons-codec:jar:1.16.1 (compile)")
+      final ArrayNode drops = report.putArray("droppedArtifacts");
+      drops.addObject()
+          .put("coordinate", "commons-codec:commons-codec:jar:1.21.0 (compile)")
           .put("programClassesRemoved", 109);
+      drops.addObject()
+          .put("coordinate", "at.yawk.lz4:lz4-java:jar:1.10.1 (runtime)")
+          .put("programClassesRemoved", 52);
+      drops.addObject()
+          .put("coordinate", "com.github.luben:zstd-jni:jar:1.5.7-18 (runtime)")
+          .put("programClassesRemoved", 43);
       Files.writeString(reportPath, JSON.writeValueAsString(report));
       ExampleSupport.main(new String[] {"verify-spring-expected-drop", reportPath.toString()});
 
       ((ObjectNode) report.withArray("droppedArtifacts").get(0))
-          .put("coordinate", "org.yaml:snakeyaml:jar:2.2 (compile)");
+          .put("coordinate", "org.yaml:snakeyaml:jar:2.6 (compile)");
       Files.writeString(reportPath, JSON.writeValueAsString(report));
       try {
         ExampleSupport.main(new String[] {"verify-spring-expected-drop", reportPath.toString()});
       } catch (final IOException exception) {
-        if (exception.getMessage().contains("expected Commons Codec")) {
+        if (exception.getMessage().contains("Unexpected Spring fixture artifact drop:")) {
           return;
         }
         throw new AssertionError("Unexpected Spring drop rejection", exception);
@@ -282,18 +288,20 @@ public final class ExampleSupportContractTest {
       if (install < 0 || fixture < 0 || install > fixture) {
         throw new AssertionError(script + " must install the catalog before running examples");
       }
-      if (contents.contains("-Delide.productionClassesComplete=true")) {
+      if (script.equals("scripts/prepare-transcript-examples.sh")
+          && contents.contains("-Delide.productionClassesComplete=true")) {
         throw new AssertionError(script + " must rely on the process-classes lifecycle default");
       }
     }
     final String cycle = Files.readString(root.resolve("examples/run-elision-cycle.sh"));
     if (!cycle.contains("analysis_report=")
         || !cycle.contains("-Delide.analysisSummaryFile=$analysis_report")
-        || !cycle.contains("verify-analyze-precondition \"$analysis_report\"")
+        || !cycle.contains("-Delide.productionClassesComplete=true")
+        || !cycle.contains("verify-spring-analysis \"$analysis_report\"")
         || !cycle.contains("if [[ $fixture == example-spring-boot-app || $fixture == example-cve-unused-app")
         || !cycle.contains("catalogId=logback-core-cve-2025-11226")) {
       throw new AssertionError(
-          "Spring Analyze must assert its non-attesting prediction, adopted catalog, and final VEX");
+          "Spring Analyze must assert catalog adoption and keep the out-of-scope finding unresolved");
     }
     final JsonNode invocations =
         JSON.readTree(Files.readString(root.resolve("scripts/transcripts-manifest.json")))

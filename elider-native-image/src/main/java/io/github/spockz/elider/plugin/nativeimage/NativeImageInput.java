@@ -60,8 +60,18 @@ public final class NativeImageInput {
       final String entryName,
       final NativeImageDescriptorKind kind,
       final byte[] bytes) {
+    return archiveBytes(archive, entryName, kind, bytes, 0);
+  }
+
+  /* package */
+  static NativeImageInput archiveBytes(
+      final JarFile archive,
+      final String entryName,
+      final NativeImageDescriptorKind kind,
+      final byte[] bytes,
+      final int physicalIndex) {
     return new NativeImageInput(
-        kind, entryName, new ArchiveBytesSource(archive, entryName, bytes.clone()));
+        kind, entryName, new ArchiveBytesSource(archive, entryName, bytes.clone(), physicalIndex));
   }
 
   /* package */
@@ -138,7 +148,7 @@ public final class NativeImageInput {
   private record ArchiveSource(JarFile archive, JarEntry entry) implements Source {
     @Override
     public String identity() {
-      return archive.getName() + "!/" + entry.getName();
+      return archive.getName() + "!/" + entry.getName() + "#0";
     }
 
     @Override
@@ -157,11 +167,11 @@ public final class NativeImageInput {
     }
   }
 
-  private record ArchiveBytesSource(JarFile archive, String entryName, byte[] bytes)
-      implements Source {
+  private record ArchiveBytesSource(
+      JarFile archive, String entryName, byte[] bytes, int physicalIndex) implements Source {
     @Override
     public String identity() {
-      return archive.getName() + "!/" + entryName;
+      return archive.getName() + "!/" + entryName + "#" + physicalIndex;
     }
 
     @Override

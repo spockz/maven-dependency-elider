@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.applicability;
 
+import io.github.spockz.elider.advisory.ForbiddenSymbol;
 import io.github.spockz.elider.model.CodeClaim;
 import io.github.spockz.elider.model.SourceClaimPathMatcher;
 import io.github.spockz.elider.scanner.JarSourceFileIndex;
@@ -267,9 +268,18 @@ public final class CodeAttributionResolver {
     return classFile.declaredMethods().stream()
         .anyMatch(
             method ->
-                method.name().equals(locator.methodName())
+                locator.matchesName(method.name())
                     && (locator.descriptor() == null
-                        || locator.descriptor().equals(method.descriptor())));
+                        || locator.descriptor().equals(method.descriptor()))
+                    && (locator.sourceParameters() == null
+                        || sourceParameters(method.descriptor())
+                            .equals(locator.sourceParameters())));
+  }
+
+  private static List<String> sourceParameters(final String descriptor) {
+    return java.util.Arrays.stream(Type.getArgumentTypes(descriptor))
+        .map(Type::getClassName)
+        .toList();
   }
 
   private static String simpleName(final String binaryName) {
@@ -362,9 +372,31 @@ public final class CodeAttributionResolver {
     ROUTINE_OWNER_AMBIGUOUS
   }
 
-  private record RoutineLocator(String owner, String methodName, String descriptor) {
+  private record RoutineLocator(
+      String owner,
+      String methodName,
+      String descriptor,
+      List<String> sourceParameters,
+      boolean includeConstructor) {
+    private boolean matchesName(final String name) {
+      return methodName.equals(name) || (includeConstructor && "<init>".equals(name));
+    }
+
     private static RoutineLocator parse(final String value) {
       final String text = value.trim();
+      if (text.indexOf('#') >= 0 && text.endsWith(")")) {
+        try {
+          final ForbiddenSymbol symbol = ForbiddenSymbol.parse(text);
+          return new RoutineLocator(
+              symbol.owner(),
+              symbol.method(),
+              null,
+              symbol.parameters(),
+              symbol.usesConstructorName());
+        } catch (final IllegalArgumentException unsupported) {
+          return null;
+        }
+      }
       final int descriptorStart = text.indexOf('(');
       final String locator = descriptorStart < 0 ? text : text.substring(0, descriptorStart);
       final String descriptor = descriptorStart < 0 ? null : text.substring(descriptorStart);
@@ -378,7 +410,7 @@ public final class CodeAttributionResolver {
           || (owner != null && !BINARY_NAME.matcher(owner).matches())) {
         return null;
       }
-      return new RoutineLocator(owner, methodName, descriptor);
+      return new RoutineLocator(owner, methodName, descriptor, null, false);
     }
 
     private static boolean validDescriptor(final String descriptor) {

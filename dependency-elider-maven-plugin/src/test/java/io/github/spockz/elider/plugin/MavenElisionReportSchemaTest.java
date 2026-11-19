@@ -1043,6 +1043,7 @@ final class MavenElisionReportSchemaTest {
     payload.putArray("genericFindings");
     payload.putArray("sourceObservations");
     payload.putArray("catalogAdoptions");
+    payload.putArray("forbiddenCodeAssessments");
     payload.set(
         "exclusionReview",
         JSON.valueToTree(

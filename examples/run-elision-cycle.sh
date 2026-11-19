@@ -3,23 +3,20 @@
 set -euo pipefail
 export LC_ALL=C
 
-configured_passthrough_names=(
-  groovy-templates-4.0.23.jar kafka-clients-3.7.1.jar micrometer-commons-1.13.6.jar
-  micrometer-jakarta9-1.13.6.jar micrometer-observation-1.13.6.jar spring-aop-6.1.14.jar
-  spring-beans-6.1.14.jar spring-boot-3.3.5.jar spring-boot-autoconfigure-3.3.5.jar
-  spring-context-6.1.14.jar spring-context-support-6.1.14.jar spring-expression-6.1.14.jar
-  spring-kafka-3.2.4.jar spring-messaging-6.1.14.jar spring-tx-6.1.14.jar spring-web-6.1.14.jar
+spring_passthrough_coordinates=(
+  org.springframework.boot:spring-boot org.springframework.boot:spring-boot-autoconfigure
+  org.springframework.boot:spring-boot-actuator org.springframework.boot:spring-boot-actuator-autoconfigure
+  # Boot reads management imports as class resources, which the class-load trace does not see.
+  org.springframework.boot:spring-boot-servlet org.springframework.boot:spring-boot-tomcat
+  org.springframework.boot:spring-boot-webmvc
+  org.springframework:spring-web org.springframework:spring-webmvc org.springframework:spring-context
+  org.springframework:spring-context-support org.springframework:spring-beans org.springframework:spring-aop
+  org.springframework:spring-expression org.springframework:spring-core org.springframework:spring-messaging
+  org.springframework:spring-tx io.projectreactor:reactor-core io.micrometer:micrometer-core
+  io.micrometer:micrometer-observation io.micrometer:micrometer-commons
+  org.apache.groovy:groovy-templates org.springframework.kafka:spring-kafka org.apache.kafka:kafka-clients
 )
-automatic_passthrough_names=(
-  angus-activation-2.0.2.jar jackson-annotations-2.18.2.jar
-  jakarta.activation-api-2.1.3.jar jakarta.annotation-api-2.1.1.jar jakarta.mail-2.0.3.jar
-  jakarta.servlet.jsp.jstl-api-3.0.2.jar jakarta.validation-api-3.0.2.jar log4j-api-2.23.1.jar
-  log4j-to-slf4j-2.23.1.jar logback-classic-1.5.11.jar logback-core-1.5.11.jar
-  micrometer-core-1.13.6.jar
-  reactor-core-3.6.11.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
-  tomcat-embed-el-10.1.31.jar tomcat-embed-websocket-10.1.31.jar zstd-jni-1.5.6-3.jar
-)
-vertically_shaded_mrjar_names=(jackson-core-2.18.2.jar snakeyaml-2.2.jar)
+spring_expected_drops=(commons-codec lz4-java zstd-jni)
 
 main() {
   repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -178,11 +175,16 @@ MANIFEST
       example-cve-unused-app
       example-cve-safe-class-app
       example-mrjar-app
+      example-forbidden-code-app
     )
   fi
 
   run_fixture_worker() (
     local fixture=$1
+    if [[ $fixture == example-forbidden-code-app ]]; then
+      bash "$repo_root/examples/verify-forbidden-code.sh" "$test_dir" "$maven" "${maven_options_without_threads[@]}"
+      return
+    fi
     fixture_dir="$repo_root/examples/$fixture"
     pom="$fixture_dir/pom.xml"
     jar_file="$fixture_dir/target/$fixture-0.1.0-SNAPSHOT.jar"
@@ -213,7 +215,7 @@ MANIFEST
         # Test compilation stays enabled; isolated test outputs are outside the runtime inventory.
         -DskipTests=true
         -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
-        -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-webmvc:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,org.springframework:spring-core:6.1.14:jar:,org.springframework:spring-messaging:6.1.14:jar:,org.springframework:spring-tx:6.1.14:jar:,io.projectreactor:reactor-core:3.6.11:jar:,io.micrometer:micrometer-core:1.13.6:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:,org.springframework.kafka:spring-kafka:3.2.4:jar:,org.apache.kafka:kafka-clients:3.7.1:jar:
+        "-Delide.trimSkipArtifacts=$(IFS=,; printf "%s" "${spring_passthrough_coordinates[*]}")"
       )
     elif [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
       elision_options+=(
@@ -253,8 +255,6 @@ MANIFEST
       capture_spring_package_inventory "$archive_file" "$test_dir/$fixture-baseline-inventory"
       mail_artifacts="$test_dir/$fixture-mail-artifacts"
       capture_spring_mail_artifacts "$jar_file" "$mail_artifacts"
-      capture_spring_webmvc "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
-      capture_spring_passthrough "$jar_file" "$test_dir/$fixture-passthrough-jars"
     fi
 
     if [[ $fixture == example-spring-boot-app ]]; then
@@ -264,6 +264,7 @@ MANIFEST
       analysis_output="$test_dir/$fixture-analysis.out"
       run_fixture_maven "$fixture_dir" -f "$pom" "${elision_options[@]}" \
         io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
+        -Delide.productionClassesComplete=true \
         "-Delide.analysisSummaryFile=$analysis_report" >"$analysis_output"
       if ! rg -Fq "io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0" "$analysis_output" \
         || ! rg -Fq "catalogId=logback-core-cve-2025-11226" "$analysis_output" \
@@ -273,7 +274,7 @@ MANIFEST
         exit 1
       fi
       "$java" --class-path "$support_classpath" ExampleSupport \
-        verify-analyze-precondition "$analysis_report"
+        verify-spring-analysis "$analysis_report"
       production_output="$test_dir/$fixture-production-classes"
       usage_report="$test_dir/$fixture-class-usage.json"
       cp -a -- "$fixture_dir/target/classes" "$production_output"
@@ -395,8 +396,9 @@ MANIFEST
       verify_basic_trimmed_artifacts "$fixture_dir" "$jar_file" \
         "$test_dir/basic-original/commons-compress-1.28.0.jar" "$baseline_package_bytes"
     elif [[ $fixture == example-spring-boot-app ]]; then
-      compare_spring_webmvc "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
-      compare_spring_passthrough "$jar_file" "$test_dir/$fixture-passthrough-jars" "$fixture_dir"
+      compare_spring_passthrough "$test_dir/$fixture-baseline-inventory" "$test_dir/$fixture-final-inventory"
+      verify_spring_nested_vertical_shading "$test_dir/$fixture-baseline-inventory" "$test_dir/$fixture-final-inventory"
+      verify_spring_snakeyaml_retained "$fixture_dir"
       final_package_bytes=$(wc -c <"$jar_file")
       if (( final_package_bytes >= baseline_package_bytes )); then
         echo "Spring Boot package did not shrink: $baseline_package_bytes to $final_package_bytes bytes" >&2
@@ -671,7 +673,8 @@ capture_spring_mail_artifacts() {
   local manifest="$output_dir/sha256.txt"
   local -a patterns=(
     'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
-    'BOOT-INF/lib/jakarta\.mail-[^/]+\.jar'
+    'BOOT-INF/lib/jakarta\.mail-api-[^/]+\.jar'
+    'BOOT-INF/lib/angus-mail-[^/]+\.jar'
     'BOOT-INF/lib/jakarta\.activation-api-[^/]+\.jar'
     'BOOT-INF/lib/angus-activation-[^/]+\.jar'
   )
@@ -756,14 +759,19 @@ compare_spring_package_inventory() {
   final_count=$(wc -l <"$final_archives")
   comm -23 "$baseline_archives" "$final_archives" >"$test_dir/spring-removed-archives.txt"
   comm -13 "$baseline_archives" "$final_archives" >"$test_dir/spring-added-archives.txt"
-  if [[ $(<"$test_dir/spring-removed-archives.txt") != "BOOT-INF/lib/commons-codec-1.16.1.jar" ||
-    -s $test_dir/spring-added-archives.txt ]]; then
-    echo "Spring packaged dependency archive change did not match the expected Commons Codec removal" >&2
+  local artifact
+  local expected_archives=()
+  for artifact in "${spring_expected_drops[@]}"; do
+    expected_archives+=("$(spring_nested_archive "$baseline_dir" "$artifact")")
+  done
+  if ! diff -u <(printf '%s\n' "${expected_archives[@]}" | sort) "$test_dir/spring-removed-archives.txt" ||
+    [[ -s $test_dir/spring-added-archives.txt ]]; then
+    echo "Spring packaged dependency inventory did not match the expected removals" >&2
     cat -- "$test_dir/spring-removed-archives.txt" "$test_dir/spring-added-archives.txt" >&2
     exit 1
   fi
   printf 'Spring dependency archives: baseline=%s, final=%s, retained=%s, elided=%s\n' \
-    "$baseline_count" "$final_count" "$final_count" 1
+    "$baseline_count" "$final_count" "$final_count" "${#expected_archives[@]}"
 }
 
 compare_spring_mail_artifacts() {
@@ -783,79 +791,54 @@ compare_spring_mail_artifacts() {
   done <"$baseline_dir/sha256.txt"
 }
 
-capture_spring_webmvc() {
-  local archive=$1
-  local output=$2
-  local entries="$test_dir/spring-webmvc-entries"
-  local -a matches
-  "$jar" tf "$archive" >"$entries"
-  mapfile -t matches < <(grep -E '^BOOT-INF/lib/spring-webmvc-[^/]+\.jar$' "$entries" || true)
-  if [[ ${#matches[@]} -ne 1 ]]; then
-    echo "Expected exactly one nested Spring MVC JAR in $archive; found ${#matches[@]}" >&2
-    exit 1
-  fi
-  extract_nested_jar "$archive" "${matches[0]}" "$output"
-}
-
-compare_spring_webmvc() {
-  local archive=$1
-  local baseline=$2
-  local current="$test_dir/spring-webmvc-current.jar"
-  capture_spring_webmvc "$archive" "$current"
-  if ! cmp --silent -- "$baseline" "$current"; then
-    echo "Configured Spring MVC pass-through archive changed during elision" >&2
-    exit 1
-  fi
-  printf 'Configured Spring MVC pass-through archive remained byte-identical\n'
-}
-
-capture_spring_passthrough() {
-  collect_spring_passthrough "$1" "$2" false
-}
-
 compare_spring_passthrough() {
-  local archive=$1
-  local baseline_dir=$2
-  local fixture_dir=$3
-  local current_dir="$test_dir/passthrough-current"
-  local baseline_names="$test_dir/passthrough-baseline-names"
-  local current_names="$test_dir/passthrough-current-names"
-  verify_spring_snakeyaml_retained "$fixture_dir"
-  collect_spring_passthrough "$archive" "$current_dir" true
-  find "$baseline_dir" -type f -name '*.jar' -printf '%f\n' | sort >"$baseline_names"
-  local transformed
-  for transformed in "${vertically_shaded_mrjar_names[@]}"; do
-    grep -Fvx -- "$transformed" "$baseline_names" >"$baseline_names.expected"
-    mv -- "$baseline_names.expected" "$baseline_names"
+  local baseline_dir=$1
+  local final_dir=$2
+  local -A configured=()
+  local coordinate entry name
+  local configured_count=0
+  local automatic_count=0
+  for coordinate in "${spring_passthrough_coordinates[@]}"; do
+    entry=$(spring_nested_archive "$baseline_dir" "${coordinate#*:}")
+    configured[${entry##*/}]=1
   done
-  find "$current_dir" -type f -name '*.jar' -printf '%f\n' | sort >"$current_names"
-  local configured
-  for configured in "${configured_passthrough_names[@]}"; do
-    grep -Fqx -- "$configured" "$current_names" || {
-      echo "Configured pass-through JAR was not packaged: $configured" >&2
-      exit 1
-    }
-  done
-  diff -u "$baseline_names" "$current_names" || {
-    echo "Set of pass-through nested JARs changed from baseline" >&2
-    exit 1
-  }
-  local name
-  while IFS= read -r name; do
-    cmp -- "$baseline_dir/$name" "$current_dir/$name" || {
+  while IFS= read -r entry; do
+    name=${entry##*/}
+    if [[ -v configured[$name] ]]; then
+      configured_count=$((configured_count + 1))
+    elif [[ -f $final_dir/$name ]] && grep -Fqx 'module-info.class' "$baseline_dir/$name.entries"; then
+      automatic_count=$((automatic_count + 1))
+    else
+      continue
+    fi
+    cmp -- "$baseline_dir/$name" "$final_dir/$name" || {
       echo "Pass-through JAR was modified: $name" >&2
       exit 1
     }
-  done <"$current_names"
-  verify_spring_nested_vertical_shading "$archive" "$baseline_dir"
+  done <"$baseline_dir/nested-archives.txt"
   printf '%s configured and %s automatic pass-through JAR(s) remained byte-identical\n' \
-    "$(grep -Fxf <(printf '%s\n' "${configured_passthrough_names[@]}") "$current_names" | wc -l)" \
-    "$(grep -Fxf <(printf '%s\n' "${automatic_passthrough_names[@]}") "$current_names" | wc -l)"
+    "$configured_count" "$automatic_count"
+}
+
+spring_nested_archive() {
+  local inventory=$1
+  local artifact=$2
+  local version_prefix=${3:-}
+  local -a names
+  mapfile -t names < <(grep -E "^BOOT-INF/lib/$artifact-${version_prefix}[0-9][^/]*\.jar$" "$inventory/nested-archives.txt")
+  if (( ${#names[@]} != 1 )); then
+    echo "Expected one Spring nested JAR for $artifact; found ${#names[@]}" >&2
+    return 1
+  fi
+  printf '%s\n' "${names[0]}"
 }
 
 verify_spring_nested_vertical_shading() {
-  local archive=$1
-  local baseline_dir=$2
+  local baseline_dir=$1
+  local final_dir=$2
+  local jackson_path yaml_path
+  jackson_path=$(spring_nested_archive "$baseline_dir" jackson-core '2\.')
+  yaml_path=$(spring_nested_archive "$baseline_dir" snakeyaml)
   local name
   local baseline
   local current
@@ -869,14 +852,11 @@ verify_spring_nested_vertical_shading() {
   local selected_version
   local selected_root
   local upper_tier
-  for name in "${vertically_shaded_mrjar_names[@]}"; do
+  for name in "${jackson_path##*/}" "${yaml_path##*/}"; do
     baseline="$baseline_dir/$name"
-    current="$test_dir/$name.current.jar"
-    baseline_entries="$test_dir/$name.baseline-entries"
-    current_entries="$test_dir/$name.current-entries"
-    extract_nested_jar "$archive" "BOOT-INF/lib/$name" "$current"
-    "$jar" tf "$baseline" >"$baseline_entries"
-    "$jar" tf "$current" >"$current_entries"
+    current="$final_dir/$name"
+    baseline_entries="$baseline_dir/$name.entries"
+    current_entries="$final_dir/$name.entries"
     baseline_target_versioned=$(awk -F/ \
       '/^META-INF\/versions\/[0-9]+\/.*\.class$/ && $0 !~ /\/module-info\.class$/ { if (($3 + 0) <= 21) count++ } END { print count + 0 }' \
       "$baseline_entries")
@@ -886,21 +866,18 @@ verify_spring_nested_vertical_shading() {
     baseline_classes=$(awk '/\.class$/ { count++ } END { print count + 0 }' "$baseline_entries")
     current_classes=$(awk '/\.class$/ { count++ } END { print count + 0 }' "$current_entries")
     case $name in
-      jackson-core-2.18.2.jar)
+      jackson-core-2.*.jar)
         retained_class='com/fasterxml/jackson/core/JsonFactory.class'
-        selected_version='META-INF/versions/21/com/fasterxml/jackson/core/internal/shaded/fdp/v2_18_2/FastDoubleSwar.class'
-        selected_root='com/fasterxml/jackson/core/internal/shaded/fdp/v2_18_2/FastDoubleSwar.class'
-        upper_tier='META-INF/versions/22/com/fasterxml/jackson/core/internal/shaded/fdp/v2_18_2/FastDoubleSwar.class'
+        selected_version=$(grep -E '^META-INF/versions/21/com/fasterxml/jackson/core/internal/shaded/fdp/[^/]+/FastDoubleSwar\.class$' "$baseline_entries")
+        selected_root=${selected_version#META-INF/versions/21/}
         ;;
-      snakeyaml-2.2.jar)
-        retained_class='org/yaml/snakeyaml/Yaml.class'
+      snakeyaml-*.jar)
         selected_version='META-INF/versions/9/org/yaml/snakeyaml/internal/Logger.class'
         selected_root='org/yaml/snakeyaml/internal/Logger.class'
-        upper_tier=''
         ;;
       *) echo "No retained-class assertion for vertically shaded MRJAR: $name" >&2; exit 1 ;;
     esac
-    if [[ $name == snakeyaml-2.2.jar ]]; then
+    if [[ $name == snakeyaml-*.jar ]]; then
       has_entry "$baseline_entries" "$selected_version"
       has_entry "$current_entries" "$selected_root"
       lacks_entry "$current_entries" "$selected_version"
@@ -922,11 +899,12 @@ verify_spring_nested_vertical_shading() {
     has_entry "$current_entries" "$selected_root"
     compare_nested_entry_bytes \
       "$baseline" "$selected_version" "$current" "$selected_root" "$name" selected-implementation
-    if [[ -n $upper_tier ]]; then
-      has_entry "$baseline_entries" "$upper_tier"
+    while IFS= read -r upper_tier; do
       has_entry "$current_entries" "$upper_tier"
       compare_nested_entry_bytes "$baseline" "$upper_tier" "$current" "$upper_tier" "$name" upper-tier
-    fi
+    done < <(awk -F/ -v root="$selected_root" \
+      '$0 ~ /^META-INF\/versions\/[0-9]+\// && $3 + 0 > 21 &&
+       substr($0, length("META-INF/versions/" $3 "/") + 1) == root' "$baseline_entries")
     printf 'Nested %s vertically shaded: %s/%s target-tier/physical classes became %s/%s; selected implementation bytes match\n' \
       "$name" "$baseline_target_versioned" "$baseline_classes" \
       "$current_target_versioned" "$current_classes"
@@ -958,62 +936,6 @@ compare_nested_entry_bytes() {
     echo "Vertically shaded MRJAR did not preserve the $label class bytes: $name" >&2
     exit 1
   }
-}
-
-collect_spring_passthrough() {
-  local archive=$1
-  local output_dir=$2
-  local reject_unknown=$3
-  local entries="$test_dir/passthrough-entries"
-  local staging="$test_dir/passthrough-stage"
-  local entry
-  local name
-  local nested_listing
-  local unsupported
-  local selected
-  mkdir -p -- "$output_dir" "$staging"
-  "$jar" tf "$archive" >"$entries"
-  while IFS= read -r entry; do
-    [[ $entry == BOOT-INF/lib/*.jar ]] || continue
-    name=${entry##*/}
-    local nested="$staging/$name"
-    extract_nested_jar "$archive" "$entry" "$nested"
-    nested_listing="$staging/$name.entries"
-    "$jar" tf "$nested" >"$nested_listing"
-    unsupported=false
-    if grep -Fqx 'module-info.class' "$nested_listing" || \
-      awk '/^META-INF\/versions\/[0-9]+\/.*\.class$/ && $0 !~ /\/module-info\.class$/ { found=1 } END { exit !found }' "$nested_listing"; then
-      unsupported=true
-    fi
-    selected=false
-    if contains_string "$name" "${configured_passthrough_names[@]}"; then
-      selected=true
-    elif [[ $unsupported == true ]]; then
-      if contains_string "$name" "${automatic_passthrough_names[@]}"; then
-        selected=true
-      elif contains_string "$name" "${vertically_shaded_mrjar_names[@]}"; then
-        if [[ $reject_unknown == false ]]; then
-          selected=true
-        fi
-      elif [[ $reject_unknown == true ]]; then
-        echo "Unknown automatic pass-through archive appeared: $name" >&2
-        exit 1
-      fi
-    fi
-    if [[ $selected == true ]]; then
-      cp -- "$nested" "$output_dir/$name"
-    fi
-  done < <(grep -E '^BOOT-INF/lib/[^/]+\.jar$' "$entries")
-}
-
-contains_string() {
-  local needle=$1
-  shift
-  local candidate
-  for candidate in "$@"; do
-    [[ $candidate == "$needle" ]] && return 0
-  done
-  return 1
 }
 
 extract_nested_jar() {
@@ -1136,7 +1058,8 @@ verify_baseline_archive() {
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
-      has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/jakarta\.mail-api-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/angus-mail-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.activation-api-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/angus-activation-[^/]+\.jar'
       ;;
@@ -1174,7 +1097,7 @@ verify_archive() {
   local fixture_dir=$3
   case $fixture in
     example-basic-app) verify_effective_graph_report "$fixture_dir" 2 ;;
-    example-spring-boot-app) verify_effective_graph_report "$fixture_dir" 1 ;;
+    example-spring-boot-app) verify_effective_graph_report "$fixture_dir" "${#spring_expected_drops[@]}" ;;
     example-cve-unused-app)
       verify_effective_graph_report "$fixture_dir" 1
       verify_cve_unused_expected_drop "$fixture_dir"
@@ -1200,7 +1123,8 @@ verify_archive() {
       lacks_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
-      has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/jakarta\.mail-api-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/angus-mail-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.activation-api-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/angus-activation-[^/]+\.jar'
       ;;

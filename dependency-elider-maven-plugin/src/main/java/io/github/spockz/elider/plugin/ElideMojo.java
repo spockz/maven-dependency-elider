@@ -116,6 +116,7 @@ public final class ElideMojo extends AbstractElisionMojo {
             snykConfiguration(),
             preconditionClassPathComplete,
             assumeConventionalJavaSourceLayout,
+            failOnForbiddenCode,
             afterGenerationStaging));
   }
 

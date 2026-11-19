@@ -183,7 +183,7 @@ main() {
         elision_options+=(
           "-Delide.productionOutput=$evidence_dir/$fixture-production-classes"
           -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
-          -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot,org.springframework.boot:spring-boot-autoconfigure,org.springframework.boot:spring-boot-actuator,org.springframework.boot:spring-boot-actuator-autoconfigure,org.springframework:spring-web,org.springframework:spring-context,org.springframework:spring-context-support,org.springframework:spring-beans,org.springframework:spring-aop,org.springframework:spring-expression,org.springframework:spring-core,org.springframework:spring-messaging,org.springframework:spring-tx,io.projectreactor:reactor-core,io.micrometer:micrometer-core,io.micrometer:micrometer-observation,io.micrometer:micrometer-commons,org.apache.groovy:groovy-templates,org.springframework.kafka:spring-kafka,org.apache.kafka:kafka-clients
+          -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot,org.springframework.boot:spring-boot-servlet,org.springframework.boot:spring-boot-tomcat,org.springframework.boot:spring-boot-webmvc,org.springframework.boot:spring-boot-autoconfigure,org.springframework.boot:spring-boot-actuator,org.springframework.boot:spring-boot-actuator-autoconfigure,org.springframework:spring-web,org.springframework:spring-context,org.springframework:spring-context-support,org.springframework:spring-beans,org.springframework:spring-aop,org.springframework:spring-expression,org.springframework:spring-core,org.springframework:spring-messaging,org.springframework:spring-tx,io.projectreactor:reactor-core,io.micrometer:micrometer-core,io.micrometer:micrometer-observation,io.micrometer:micrometer-commons,org.apache.groovy:groovy-templates,org.springframework.kafka:spring-kafka,org.apache.kafka:kafka-clients
         )
         ;;
       example-cve-unused-app|example-cve-safe-class-app)
@@ -224,6 +224,7 @@ main() {
     wait "$pid"
   done
 
+  bash "$repo_root/examples/verify-forbidden-code.sh" "$evidence_dir" "$maven" "${maven_options[@]}"
 }
 
 main "$@"

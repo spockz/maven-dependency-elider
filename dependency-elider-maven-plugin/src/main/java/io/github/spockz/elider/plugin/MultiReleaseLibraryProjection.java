@@ -46,7 +46,23 @@ final class MultiReleaseLibraryProjection {
     return true;
   }
 
+  /* package */ record TargetProjection(
+      Set<String> requiredTargetRoots,
+      Path projectionPath,
+      Set<String> targetClasses,
+      MultiReleaseArchivePlan.SourceData sourceData) {}
+
   static Set<String> requiredTargetRoots(
+      final Path source,
+      final ArtifactCoordinate coordinate,
+      final Path projectionDirectory,
+      final int targetRelease)
+      throws IOException {
+    return inspectTargetProjection(source, coordinate, projectionDirectory, targetRelease)
+        .requiredTargetRoots();
+  }
+
+  static TargetProjection inspectTargetProjection(
       final Path source,
       final ArtifactCoordinate coordinate,
       final Path projectionDirectory,
@@ -54,13 +70,17 @@ final class MultiReleaseLibraryProjection {
       throws IOException {
     final Path targetProjection = create(source, coordinate, projectionDirectory, targetRelease);
     final Set<String> targetClasses = TrimPaths.classNames(targetProjection);
+    MultiReleaseWorkObserver.recordSourceInspected(source.toAbsolutePath().normalize());
+    final MultiReleaseArchivePlan.SourceData sourceData =
+        MultiReleaseArchivePlan.inspectSource(source);
     final MultiReleaseArchivePlan.PluginView view =
-        MultiReleaseArchivePlan.create(source, targetRelease, Set.of(), Set.of()).pluginView();
+        MultiReleaseArchivePlan.create(sourceData, targetRelease, Set.of(), Set.of()).pluginView();
     final Set<String> viewClasses = dottedNames(view.targetPresentClasses());
     if (!viewClasses.equals(targetClasses)) {
       throw new IOException("MRJAR target projection and archive plan disagree for " + coordinate);
     }
-    return dottedNames(view.requiredRootClasses());
+    return new TargetProjection(
+        dottedNames(view.requiredRootClasses()), targetProjection, targetClasses, sourceData);
   }
 
   private static Set<String> dottedNames(final Set<String> names) {
@@ -76,6 +96,7 @@ final class MultiReleaseLibraryProjection {
       final int release)
       throws IOException {
     final Path normalizedOriginal = original.toAbsolutePath().normalize();
+    MultiReleaseWorkObserver.recordProjectionCreated(normalizedOriginal, release);
     final Path normalizedOutputDirectory = outputDirectory.toAbsolutePath().normalize();
     final Path projection =
         normalizedOutputDirectory.resolve(

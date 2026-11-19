@@ -17,6 +17,7 @@ import java.util.TreeSet;
 import proguard.classfile.ClassPool;
 
 /** Reads archive ownership and MRJAR target requirements. */
+@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class TierInventoryReader {
   /** Bounds and policy belong to this analysis operation. */
   private final MultiReleaseTrimContext operation;
@@ -114,12 +115,17 @@ final class TierInventoryReader {
     if (!passThrough.retained().contains(snapshot) || classInventory.hasRootModuleDescriptor()) {
       return;
     }
+    final MultiReleaseLibraryProjection.TargetProjection targetProjection =
+        MultiReleaseLibraryProjection.inspectTargetProjection(
+            source, snapshot.coordinate(), projectionDirectory, operation.targetRelease());
     candidates.put(
         snapshot,
         new MultiReleaseCandidateInfo(
-            MultiReleaseLibraryProjection.requiredTargetRoots(
-                source, snapshot.coordinate(), projectionDirectory, operation.targetRelease()),
-            classInventory.classNamesAboveRelease(operation.targetRelease())));
+            targetProjection.requiredTargetRoots(),
+            classInventory.classNamesAboveRelease(operation.targetRelease()),
+            targetProjection.projectionPath(),
+            targetProjection.targetClasses(),
+            targetProjection.sourceData()));
   }
 
   /* package */ record Inventory(
@@ -166,10 +172,20 @@ final class TierInventoryReader {
   }
 
   /* package */ record MultiReleaseCandidateInfo(
-      Set<String> requiredTargetRoots, Set<String> versionedClasses) {
+      Set<String> requiredTargetRoots,
+      Set<String> versionedClasses,
+      Path targetProjection,
+      Set<String> targetClasses,
+      io.github.spockz.elider.trimmer.MultiReleaseArchivePlan.SourceData sourceData) {
     /* package */ MultiReleaseCandidateInfo {
       requiredTargetRoots = Set.copyOf(requiredTargetRoots);
       versionedClasses = Set.copyOf(versionedClasses);
+      targetClasses = Set.copyOf(targetClasses);
+    }
+
+    /* package */ MultiReleaseCandidateInfo(
+        final Set<String> requiredTargetRoots, final Set<String> versionedClasses) {
+      this(requiredTargetRoots, versionedClasses, null, Set.of(), null);
     }
   }
 

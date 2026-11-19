@@ -383,8 +383,22 @@ final class NoExtensionAnalyzeBanPredictionTest {
     final Set<org.apache.maven.artifact.Artifact> direct =
         fixture.project().getDependencyArtifacts();
 
+    final VulnerabilityMappingConfig policy = new VulnerabilityMappingConfig();
+    policy.setCveId("CVE-2026-10001");
+    policy.setGroupId("fixture");
+    policy.setArtifactId("banned");
+    policy.setVersionRangeSpec("(,)");
+    policy.setForbiddenSymbols(List.of(BANNED_IDLE_CLASS));
+    set(mojo, "vulnerabilityMappings", List.of(policy));
+    set(mojo, "failOnForbiddenCode", true);
     mojo.execute();
     assertAppliedBan(fixture, used, direct);
+    final MavenElisionReportSnapshot snapshot =
+        MavenElisionReportWriter.read(fixture.trace().getParent().resolve(SUMMARY_FILENAME));
+    assertThat(snapshot.forbiddenCodeAssessments())
+        .as("the excluded artifact is absent from the applied inventory")
+        .extracting(ForbiddenCodeAssessment::status)
+        .containsExactly(ForbiddenCodeAssessment.Status.PASS);
   }
 
   @Nested

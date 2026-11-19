@@ -914,6 +914,7 @@ Process exit status: 0
 | `-Delide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
 | `-Delide.retainedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
 | `-Delide.banishedDependencies` | *(empty)* | Comma-separated exact, trimmed `groupId:artifactId` requests; wildcards and version/type/classifier fields are unsupported. Matched or pre-resolution-excluded requests require `elide.productionClassesComplete=true` or a trusted `process-classes` lifecycle binding. A matching unsupported Maven scope or artifact type fails closed. Analyze predicts matched, pre-resolution-excluded, or unmatched outcomes and never applies them; Elide applies only a validated plan before publication. |
+| `-Delide.failOnForbiddenCode` | `false` | Fail the goal when an explicit forbidden-code policy finds a violation. All outcomes are reported with either setting. |
 | `-Delide.productionOutput` | *(empty)* | Path to compiled classes (e.g. `target/classes`) to enable static code reference scanning. |
 | `-Delide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader SPI roots; when `false`, prunes unproven SPI roots. |
 | `-Delide.reportFile` | `target/dependency-elider-class-usage.json` | Path for the class-usage analysis report. |
@@ -1139,6 +1140,342 @@ Map specific vulnerabilities to code symbols in `pom.xml`:
   </vulnerabilityMappings>
 </configuration>
 ```
+
+### Forbidden Code Policy
+
+Add `forbiddenSymbols` to an explicit POM mapping, or use `forbidDeclaredCode=true` to select
+the mapping's own `vulnerableClasses`. Use one selector per mapping. A mapping using
+`forbiddenSymbols` can also supply a separate `vulnerableClasses` group for CVE proof.
+Without that group, the explicit symbols supply the declared code group for the Maven finding.
+Downloaded findings and the current mapping catalog format supply advisory evidence.
+
+This example uses an illustrative CVE and Maven identity. Use the advisory and symbols reviewed
+for your artifact.
+
+```xml
+<configuration>
+  <vulnerabilityMappings>
+    <vulnerabilityMapping>
+      <cveId>CVE-2026-10001</cveId>
+      <componentKind>MAVEN_ARTIFACT</componentKind>
+      <groupId>org.example</groupId>
+      <artifactId>affected-library</artifactId>
+      <versionRangeSpec>[1.2,1.3)</versionRangeSpec>
+      <forbiddenSymbols>
+        <symbol>org.example.affected.Parser#parse(byte[])</symbol>
+      </forbiddenSymbols>
+    </vulnerabilityMapping>
+  </vulnerabilityMappings>
+</configuration>
+```
+
+| Component kind | Identity |
+| :--- | :--- |
+| `MAVEN_ARTIFACT` (default) | Exact `groupId`, `artifactId`, `type` (default `jar`), and `classifier` (default empty) in the effective non-test dependency inventory. |
+| `PROJECT_OUTPUT` | The current project's identity and version. Supply the version scope and omit dependency coordinates. |
+| `JAVA_RUNTIME` | The Java runtime for the compiler target release. Supply the version scope and omit dependency coordinates. |
+
+A mapping requires an exact `version` or an explicit `versionRangeSpec`. Use `(,)` to cover all
+versions of the selected component. The range controls policy scope. `assertsAffected=true`
+separately asserts CVE affectedness for that scope. For runtime rules, a matching active
+runtime supplies the actual version and image identity. Numeric predicates compare to that
+runtime's feature and update version. A missing target image or unsupported runtime version
+predicate leaves version applicability `UNKNOWN`. A direct method match can still violate policy.
+
+| Example symbol | Selects |
+| :--- | :--- |
+| `org.example.Parser` | That class only. |
+| `org.example.Parser#parse(byte[],java.lang.String)` | Only that parameter signature, including any corresponding compiler-generated bridge descriptors. |
+| `org.example.Parser#Parser()` | The zero-argument constructor and any same-named method with that signature. |
+| `org.example.*` / `org.example.**` | Top-level classes in that package / that package and its subpackages. |
+| `org.example.Parser$*` / `org.example.Parser$**` | Direct / recursive member classes identified by class metadata. |
+
+Exact methods require parentheses, including `()` for no arguments. Use primitive types or
+fully qualified reference types and `[]` for arrays. Source-style nested names use metadata
+for resolution. If a retained named class inherits the method from a declaration available in
+the inspected provider, the report identifies that declaring owner. An unresolved hierarchy or
+ambiguous owner yields `UNKNOWN` where it prevents a complete conclusion. Elide trims whole
+classes. A retained forbidden method is a violation even when its body is never called.
+
+The scope covers production output, admitted generated classes such as Spring AOT main
+classes, and effective non-test dependencies at `process-classes`. Test output, plugin and
+processor dependencies, and later package or deployment inputs are outside this scope. Direct
+invocations use `elide.productionClassesComplete=true` to assert compiled production output
+completeness. The JAR checks cover every retained physical release tier, including tiers above
+the target and unmodified pass-through JARs.
+
+* `PASS` means the selected symbol is absent from a complete scope.
+* `VIOLATION` means the declaration survives in an inspected JAR or production output, or an
+  exact runtime method invocation appears in the assessed bytecode.
+* `UNKNOWN` means the available evidence cannot determine a result. A runtime rule with no
+  direct match remains unknown. Independent JAR checks still produce their own results.
+* `NOT_APPLICABLE` means the concrete component version is outside the configured scope.
+
+`analyze` saves `PREDICTED` results. `elide` saves `OBSERVED` results after checking actual
+bytes, including cache hits. Each summary stores them in `forbiddenCodeAssessments` with the
+symbol, CVE, component, version and applicability, provenance, evidence, and enforcement setting.
+The `report` goal displays the selected snapshot without rechecking outputs.
+
+For `JAVA_RUNTIME` methods, Elide matches the instruction's symbolic owner, name, and parameter
+types. It uses caller class metadata to resolve source-style nested names. It checks production
+classes and the target release's view of effective non-test JARs. `DIRECT_RUNTIME_CALL` evidence
+names the caller class entry and the full invoked descriptor. An exact match violates policy
+even when runtime applicability is unknown. A known out-of-scope runtime version reports
+`NOT_APPLICABLE`. Execution, runtime affectedness, and indirect reachability require separate
+evidence.
+
+Set `-Delide.failOnForbiddenCode=true` to make either goal fail on any violation. For example,
+an applied failure logs `Forbidden code OBSERVED VIOLATION` with the matching symbol and
+provider. The previous successful Elide report and VEX stay in place, and the rejected invocation
+publishes no Maven artifact view. An observed pass can support omission VEX when the existing
+CVE applicability, attribution and original-to-output proof checks all succeed. A symbol already
+absent from the original artifact can pass policy, while omission proof requires original presence.
+
+#### Runnable forbidden-code examples
+
+The standalone fixture compiles one application variant per build directory. Its harness
+captures class-load traces, runs Analyze and Elide, checks saved reports and effective JAR bytes,
+and replays the reports. Both demonstrations use benign inputs. Their policy observations
+describe the assessed scope and do not prove exploitability.
+
+From the repository root, with `JAVA_HOME` set to a JDK 21 or newer:
+
+```sh
+./mvnw -pl dependency-elider-maven-plugin -am install -DskipTests
+evidence=$(mktemp -d)
+bash examples/verify-forbidden-code.sh "$evidence" "$PWD/mvnw" --batch-mode --no-transfer-progress
+```
+
+The runtime mapping selects `java.util.Base64.Decoder#decode(byte[])` for CVE-2026-114938
+with the all-version policy scope `(,)`. One variant decodes a fixed Base64 value and one
+uses the equivalent plain text. With enforcement enabled, Analyze and Elide fail on the
+decoder variant's `VIOLATION`. The plain-text variant reports `UNKNOWN` and succeeds. The
+fixture repeats both cases with a Java 17 compiler target and no matching runtime image. The same
+policy results apply, with version applicability recorded as `UNKNOWN`. The public overload is an
+illustrative entry point. Applying a fixed runtime remains the
+remediation. [Apache Shiro advisory](https://shiro.apache.org/blog/2026/11/apache-shiro-java4shell.html)
+
+Replay of the decoder variant's successful run with enforcement disabled shows the exact
+call site and the independent Commons Compress pass.
+
+<!-- BEGIN:transcript:report-forbidden-runtime -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  --offline \
+  -f \
+  examples/example-forbidden-code-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report \
+  -Delide.summaryFile=$TRANSCRIPT_EVIDENCE/forbidden-code/decode/build/dependency-elider-report.json \
+  -Delide.failOnForbiddenCode=true
+Process exit status: 0
+[INFO] Cache disabled by command line flag, project will be built fully and not cached
+[INFO]
+[INFO] ------------< io.github.spockz:example-forbidden-code-app >-------------
+[INFO] Building Example: Forbidden Code at the Production Boundary 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-forbidden-code-app ---
+[INFO] Dependency Elider report JSON snapshot: <TEMP_DIR>/forbidden-code/decode/build/dependency-elider-report.json
+[INFO] Dependency Elider report
+[INFO] Project: io.github.spockz:example-forbidden-code-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Analysis target JDK release: <RUNTIME_RELEASE>
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Policy: retained=[], banished=[]
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
+[INFO] Conventional Java source layout assumption saved for this run: true
+[INFO] Whole artifacts dropped: 0 / 1 (original JAR file bytes: 0 B)
+[INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
+[INFO] Raw trace decision drops before graph safety: 0
+[INFO] Applied bans: none
+[INFO] Program classes pruned from retained JARs: 288 (uncompressed omitted .class payload bytes: 903.98 KiB; excludes module descriptors and archive metadata)
+[INFO]   - org.apache.commons:commons-compress:jar:1.17 (compile): 288 classes, 903.98 KiB
+[INFO] Vulnerability findings: 1
+[INFO]   - CVE-2018-11771 org.apache.commons:commons-compress:jar:1.17 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: DECLARED_CODE_ABSENT; All effective declared code and its nested classes are absent from the trimmed artifact. This observation is limited to the declared code and does not establish declaration completeness.
+[INFO]     Declared code: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int)] RESOLVED; classes: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundedInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry]; reasons: []
+[INFO]     Sources: [POM]
+[INFO] CVE Sources:
+[INFO]   - CACHE UNAVAILABLE
+[INFO]     Generic findings cache is unavailable offline
+[INFO] Forbidden code overall: VIOLATION
+[INFO] Forbidden code OBSERVED PASS: CVE-2018-11771 org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int) in MAVEN_ARTIFACT org.apache.commons:commons-compress:jar (Owner absent from provider; enforcement disabled)
+[INFO]     scope=[1.7,1.18), version=1.17, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=true, evidence=STAGED_ARCHIVE_DECLARATIONS, complete=true, provider=<TEMP_DIR>/forbidden-code/decode/build/elided-artifacts/.generations/<TRIM_GENERATION>/org.apache.commons-commons-compress-1.17-trimmed.jar, provenance=effective-project-pom:vulnerabilityMappings[1], source=https://commons.apache.org/proper/commons-compress/security.html
+[INFO] Forbidden code OBSERVED VIOLATION: CVE-2026-114938 java.util.Base64.Decoder#decode(byte[]) in JAVA_RUNTIME <RUNTIME_IDENTITY> (Exact invocation found in effective bytecode at <TEMP_DIR>/forbidden-code/decode/build/classes!io/github/spockz/example/forbidden/DecodeApplication.class; enforcement disabled)
+[INFO]     scope=(,), version=<RUNTIME_VERSION>, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=false, evidence=DIRECT_RUNTIME_CALL, complete=false, provider=<RUNTIME_IMAGE>, provenance=effective-project-pom:vulnerabilityMappings[0], source=https://shiro.apache.org/blog/2026/11/apache-shiro-java4shell.html
+[INFO]     provider=<TEMP_DIR>/forbidden-code/decode/build/classes, entry=io/github/spockz/example/forbidden/DecodeApplication.class, tier=0, owner=java.util.Base64$Decoder, descriptors=[([B)[B]
+[INFO] POM exclusion review (advisory only):
+[INFO]   Exclusion review unavailable: No pre-injection declaration capture is
+[INFO]   available
+[INFO] Mediated dependency graph unavailable: Maven resolver session is unavailable
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:report-forbidden-runtime -->
+
+The dependency mapping covers `[1.7,1.18)` and selects
+`ZipArchiveInputStream#read(byte[],int,int)`. The fixture checks the public `([BII)I`
+descriptor in the actual 1.17 archive. In the safe variant, the library still supplies
+`ZipArchiveEntry`, while the stream class is trimmed. The harness verifies the post-trim
+artifact against the SBOM and OpenVEX hashes. [Apache Commons Compress advisory](https://commons.apache.org/proper/commons-compress/security.html)
+
+<!-- BEGIN:transcript:analyze-forbidden-dependency -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  --offline \
+  -f \
+  examples/example-forbidden-code-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
+  -Dexample.buildDirectory=$TRANSCRIPT_EVIDENCE/forbidden-code/safe/build \
+  -Delide.traceFiles=$TRANSCRIPT_EVIDENCE/forbidden-code/safe/trace.log \
+  -Delide.cveCacheDirectory=$TRANSCRIPT_EVIDENCE/forbidden-code/safe/advisories \
+  -Delide.reportFile=$TRANSCRIPT_EVIDENCE/forbidden-code/safe/transcript-classes.json \
+  -Delide.analysisSummaryFile=$TRANSCRIPT_EVIDENCE/forbidden-code/safe/transcript-analysis.json \
+  -Delide.productionClassesComplete=true \
+  -Delide.trimJars=true \
+  -Delide.failOnForbiddenCode=true
+Process exit status: 0
+[INFO] Cache disabled by command line flag, project will be built fully and not cached
+[INFO]
+[INFO] ------------< io.github.spockz:example-forbidden-code-app >-------------
+[INFO] Building Example: Forbidden Code at the Production Boundary 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:analyze (default-cli) @ example-forbidden-code-app ---
+[WARNING] Generic findings cache is unavailable offline
+[INFO] Dependency Elider report
+[INFO] Project: io.github.spockz:example-forbidden-code-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: analysis prediction at <TIMESTAMP>
+[INFO] Analysis target JDK release: <RUNTIME_RELEASE>
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Policy: retained=[], banished=[]
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
+[INFO] Conventional Java source layout assumption saved for this run: true
+[INFO] Whole artifacts that would be dropped: 0 / 1 (original JAR file bytes: 0 B)
+[INFO] Program classes that would be removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
+[INFO] Raw trace decision drops before graph safety: 0
+[INFO] Planned bans: none
+[INFO] Program classes that would be pruned from retained JARs: 288 (uncompressed omitted .class payload bytes: unknown; excludes module descriptors and archive metadata)
+[INFO]   - org.apache.commons:commons-compress:jar:1.17 (compile): 288 classes, unknown
+[INFO]     Classes that would be pruned from this JAR: [org.apache.commons.compress.MemoryLimitException, org.apache.commons.compress.PasswordRequiredException, org.apache.commons.compress.archivers.ArchiveException, org.apache.commons.compress.archivers.ArchiveInputStream, org.apache.commons.compress.archivers.ArchiveOutputStream, ... (+283 more in analysis report)]
+[INFO] Analysis only: no trim proof or published changes
+[INFO] Vulnerability findings: 1
+[INFO]   - CVE-2018-11771 org.apache.commons:commons-compress:jar:1.17 (compile) [PLANNED_TRIM]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: PLANNED_CODE_ABSENT; Analysis would remove declared code; the resulting archive has not been verified
+[INFO]     Declared code: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int)] RESOLVED; classes: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundedInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry]; reasons: []
+[INFO]     Sources: [POM]
+[INFO] CVE Sources:
+[INFO]   - CACHE UNAVAILABLE
+[INFO]     Generic findings cache is unavailable offline
+[INFO] Forbidden code overall: UNKNOWN
+[INFO] Forbidden code PREDICTED PASS: CVE-2018-11771 org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int) in MAVEN_ARTIFACT org.apache.commons:commons-compress:jar (Owner absent from provider; enforcement enabled)
+[INFO]     scope=[1.7,1.18), version=1.17, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=true, evidence=PHYSICAL_DECLARATIONS, complete=true, provider=<TEMP_DIR>/maven-repository/org/apache/commons/commons-compress/1.17/commons-compress-1.17.jar, provenance=effective-project-pom:vulnerabilityMappings[1], source=https://commons.apache.org/proper/commons-compress/security.html
+[INFO] Forbidden code PREDICTED UNKNOWN: CVE-2026-114938 java.util.Base64.Decoder#decode(byte[]) in JAVA_RUNTIME <RUNTIME_IDENTITY> (Available runtime evidence does not establish method or class reachability; enforcement enabled)
+[INFO]     scope=(,), version=<RUNTIME_VERSION>, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=false, evidence=RUNTIME_REACHABILITY, complete=false, provider=<RUNTIME_IMAGE>, provenance=effective-project-pom:vulnerabilityMappings[0], source=https://shiro.apache.org/blog/2026/11/apache-shiro-java4shell.html
+[INFO] POM exclusion review (advisory only):
+[INFO]   Exclusion review unavailable: No pre-injection declaration capture is
+[INFO]   available
+[INFO] Mediated TEST dependency graph (captured and saved by the analyze goal):
+[INFO]   - io.github.spockz:example-forbidden-code-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
+[INFO]   - io.github.spockz:example-forbidden-code-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.17 (compile) {nodeId=n1} [RETAINED, WOULD_TRIM]
+[INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
+[INFO]   Analysis report: <TEMP_DIR>/forbidden-code/safe/transcript-analysis.json
+[INFO]   Class usage report: <TEMP_DIR>/forbidden-code/safe/transcript-classes.json
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:analyze-forbidden-dependency -->
+
+The retained variant reads a generated ZIP through `InputStream`. Elide rejects the surviving
+method with enforcement enabled and preserves the previous successful report and VEX. The
+harness checks Maven's exit status of 1 and saves its output in
+`$evidence/forbidden-code/retained/rejected.log`. With enforcement disabled, the violation is
+saved and replayed below. Applying the safe variant without
+trimming reports a violation even after a trim-enabled prediction passed. A separate 1.18
+build reports `NOT_APPLICABLE`, since the version is
+outside the configured range.
+
+<!-- BEGIN:transcript:report-forbidden-retained -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  --offline \
+  -f \
+  examples/example-forbidden-code-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report \
+  -Delide.summaryFile=$TRANSCRIPT_EVIDENCE/forbidden-code/retained/build/dependency-elider-report.json \
+  -Delide.failOnForbiddenCode=true
+Process exit status: 0
+[INFO] Cache disabled by command line flag, project will be built fully and not cached
+[INFO]
+[INFO] ------------< io.github.spockz:example-forbidden-code-app >-------------
+[INFO] Building Example: Forbidden Code at the Production Boundary 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-forbidden-code-app ---
+[INFO] Dependency Elider report JSON snapshot: <TEMP_DIR>/forbidden-code/retained/build/dependency-elider-report.json
+[INFO] Dependency Elider report
+[INFO] Project: io.github.spockz:example-forbidden-code-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Analysis target JDK release: <RUNTIME_RELEASE>
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Policy: retained=[], banished=[]
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
+[INFO] Conventional Java source layout assumption saved for this run: true
+[INFO] Whole artifacts dropped: 0 / 1 (original JAR file bytes: 0 B)
+[INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
+[INFO] Raw trace decision drops before graph safety: 0
+[INFO] Applied bans: none
+[INFO] Program classes pruned from retained JARs: 228 (uncompressed omitted .class payload bytes: 702.38 KiB; excludes module descriptors and archive metadata)
+[INFO]   - org.apache.commons:commons-compress:jar:1.17 (compile): 228 classes, 702.38 KiB
+[INFO] Vulnerability findings: 1
+[INFO]   - CVE-2018-11771 org.apache.commons:commons-compress:jar:1.17 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; A corresponding forbidden-code declaration lacks an observed pass
+[INFO]     Declared code: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int)] RESOLVED; classes: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundedInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry]; reasons: []
+[INFO]     Sources: [POM]
+[INFO] CVE Sources:
+[INFO]   - CACHE UNAVAILABLE
+[INFO]     Generic findings cache is unavailable offline
+[INFO] Forbidden code overall: VIOLATION
+[INFO] Forbidden code OBSERVED VIOLATION: CVE-2018-11771 org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int) in MAVEN_ARTIFACT org.apache.commons:commons-compress:jar (Method declaration present; enforcement disabled)
+[INFO]     scope=[1.7,1.18), version=1.17, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=true, evidence=STAGED_ARCHIVE_DECLARATIONS, complete=false, provider=<TEMP_DIR>/forbidden-code/retained/build/elided-artifacts/.generations/<TRIM_GENERATION>/org.apache.commons-commons-compress-1.17-trimmed.jar, provenance=effective-project-pom:vulnerabilityMappings[1], source=https://commons.apache.org/proper/commons-compress/security.html
+[INFO]     provider=<TEMP_DIR>/forbidden-code/retained/build/elided-artifacts/.generations/<TRIM_GENERATION>/org.apache.commons-commons-compress-1.17-trimmed.jar, entry=org/apache/commons/compress/archivers/zip/ZipArchiveInputStream.class, tier=0, owner=org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, descriptors=[([BII)I]
+[INFO] Forbidden code OBSERVED UNKNOWN: CVE-2026-114938 java.util.Base64.Decoder#decode(byte[]) in JAVA_RUNTIME <RUNTIME_IDENTITY> (Available runtime evidence does not establish method or class reachability; enforcement disabled)
+[INFO]     scope=(,), version=<RUNTIME_VERSION>, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=false, evidence=RUNTIME_REACHABILITY, complete=false, provider=<RUNTIME_IMAGE>, provenance=effective-project-pom:vulnerabilityMappings[0], source=https://shiro.apache.org/blog/2026/11/apache-shiro-java4shell.html
+[INFO] POM exclusion review (advisory only):
+[INFO]   Exclusion review unavailable: No pre-injection declaration capture is
+[INFO]   available
+[INFO] Mediated dependency graph unavailable: Maven resolver session is unavailable
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:report-forbidden-retained -->
 
 ### Overriding Conservative Multi-Symbol Mappings
 

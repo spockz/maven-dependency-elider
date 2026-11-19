@@ -26,25 +26,61 @@ public final class ArchiveClassScanner {
 
   private ArchiveClassScanner() {}
 
-  /** Scans selected internal class names in a JAR without retaining class bytes. */
-  public static Map<String, Set<String>> scanSelected(
-      final Path archivePath, final Set<String> selectedInternalNames) throws IOException {
+  /** Opens a reusable scanner session backed by a single {@link JarFile}. */
+  public static Session open(final Path archivePath) throws IOException {
     if (archivePath == null || !Files.isRegularFile(archivePath)) {
       throw new IOException("Bytecode archive is missing or not a regular file: " + archivePath);
     }
+    final Path scope = archivePath.toAbsolutePath().normalize();
+    return new Session(scope, new JarFile(scope.toFile()));
+  }
+
+  /** Scans selected internal class names in a JAR without retaining class bytes. */
+  public static Map<String, Set<String>> scanSelected(
+      final Path archivePath, final Set<String> selectedInternalNames) throws IOException {
     if (selectedInternalNames == null || selectedInternalNames.isEmpty()) {
+      if (archivePath == null || !Files.isRegularFile(archivePath)) {
+        throw new IOException("Bytecode archive is missing or not a regular file: " + archivePath);
+      }
       return Map.of();
     }
-    final Path scope = archivePath.toAbsolutePath().normalize();
-    final Map<String, Set<String>> byClass = HashMap.newHashMap(selectedInternalNames.size());
-    try (JarFile archive = new JarFile(scope.toFile())) {
+    try (Session session = open(archivePath)) {
+      return session.scanSelected(selectedInternalNames);
+    }
+  }
+
+  /** Reusable archive scanner keeping one {@link JarFile} open across frontier scans. */
+  public static final class Session implements AutoCloseable {
+    /** Normalized archive path for diagnostic messages. */
+    private final Path scope;
+
+    /** Open archive handle shared across scans. */
+    private final JarFile archive;
+
+    private Session(final Path scope, final JarFile archive) {
+      this.scope = scope;
+      this.archive = archive;
+    }
+
+    /** Scans selected base internal class names in the open archive. */
+    public Map<String, Set<String>> scanSelected(final Set<String> selectedInternalNames)
+        throws IOException {
+      if (selectedInternalNames == null || selectedInternalNames.isEmpty()) {
+        return Map.of();
+      }
+      final Map<String, Set<String>> byClass = HashMap.newHashMap(selectedInternalNames.size());
       if (selectedInternalNames.size() <= DIRECT_LOOKUP_THRESHOLD) {
         scanByLookup(archive, scope, selectedInternalNames, byClass);
       } else {
         scanByStream(archive, scope, selectedInternalNames, byClass);
       }
+      return byClass;
     }
-    return byClass;
+
+    @Override
+    public void close() throws IOException {
+      archive.close();
+    }
   }
 
   private static void scanByLookup(
@@ -68,23 +104,17 @@ public final class ArchiveClassScanner {
       final Map<String, Set<String>> byClass)
       throws IOException {
     for (final JarEntry entry : archive.stream().toList()) {
-      if (entry.isDirectory() || !entry.getName().endsWith(CLASS_SUFFIX)) {
+      final String name = entry.getName();
+      if (entry.isDirectory()
+          || !name.endsWith(CLASS_SUFFIX)
+          || name.startsWith(MultiReleaseEntryPath.PREFIX)) {
         continue;
       }
-      final String logicalName = logicalClassEntryName(entry.getName());
-      final String internalName =
-          logicalName.substring(0, logicalName.length() - CLASS_SUFFIX.length());
+      final String internalName = name.substring(0, name.length() - CLASS_SUFFIX.length());
       if (selectedInternalNames.contains(internalName)) {
         byClass.put(internalName, scanEntryNonDebug(archive, scope, entry));
       }
     }
-  }
-
-  private static String logicalClassEntryName(final String entryName) throws IOException {
-    if (!entryName.startsWith(MultiReleaseEntryPath.PREFIX)) {
-      return entryName;
-    }
-    return MultiReleaseEntryPath.parse(entryName, false).logicalName();
   }
 
   @SuppressWarnings("PMD.AvoidCatchingGenericException")

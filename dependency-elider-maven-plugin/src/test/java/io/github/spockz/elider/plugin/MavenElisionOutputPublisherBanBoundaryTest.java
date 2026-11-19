@@ -207,7 +207,8 @@ final class MavenElisionOutputPublisherBanBoundaryTest {
                 false,
                 false,
                 preparation.plan(),
-                binding));
+                binding,
+                List.of()));
       } catch (final IOException | MojoFailureException failure) {
         return failure;
       }
