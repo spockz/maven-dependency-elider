@@ -58,8 +58,6 @@ final class MavenArtifactViewUpdater {
     return result;
   }
 
-  // Maven Artifact exposes its path only through getFile().
-  @SuppressWarnings("PMD.LawOfDemeter")
   private static void validateArtifactPaths(
       final List<Artifact> artifacts,
       final Map<ArtifactIdentity, ArtifactTrimRecord> recordsByIdentity,
@@ -72,8 +70,8 @@ final class MavenArtifactViewUpdater {
         if (artifact.getFile() == null) {
           throw new IOException("Artifact path changed before applying trim: " + identity);
         }
-        final java.nio.file.Path currentPath = artifact.getFile().toPath();
-        if (!currentPath.toAbsolutePath().normalize().equals(record.originalPath())) {
+        final java.nio.file.Path currentPath = MavenArtifactInventory.normalizedPath(artifact);
+        if (!currentPath.equals(record.originalPath())) {
           throw new IOException("Artifact path changed before applying trim: " + identity);
         }
         matched.add(identity);

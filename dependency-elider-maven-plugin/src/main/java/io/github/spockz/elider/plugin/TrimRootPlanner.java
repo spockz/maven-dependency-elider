@@ -216,8 +216,13 @@ final class TrimRootPlanner {
               .orElseThrow(
                   () ->
                       new IOException("Effective roots have no inventory artifact: " + coordinate));
-      final Path path = owner.filePath().toAbsolutePath().normalize();
+      final Path path = canonicalPath(owner.filePath());
       return new TrimArtifactRootKey(coordinate, path, HexDigest.sha256(path));
+    }
+
+    private static Path canonicalPath(final Path path) throws IOException {
+      final Path normalized = path.toAbsolutePath().normalize();
+      return Files.exists(normalized) ? normalized.toRealPath() : normalized;
     }
 
     private static ElisionAnalysisModel.ArtifactSnapshot validate(
@@ -229,23 +234,31 @@ final class TrimRootPlanner {
       if (!HexDigest.isLowercaseHex(key.sha256(), 64)) {
         throw new IOException("Invalid discovered-root artifact digest: " + key.coordinate());
       }
+      final Path canonicalKeyPath = canonicalPath(key.path());
       final ElisionAnalysisModel.ArtifactSnapshot snapshot =
-          inventory.stream()
-              .filter(candidate -> candidate.coordinate().equals(key.coordinate()))
-              .filter(
-                  candidate -> candidate.filePath().toAbsolutePath().normalize().equals(key.path()))
-              .findFirst()
-              .orElseThrow(
-                  () ->
-                      new IOException(
-                          "Discovered roots do not match an inventory artifact: "
-                              + key.coordinate()));
-      final Set<String> classes = classesByPath.get(key.path());
+          matchingSnapshot(inventory, key, canonicalKeyPath);
+      final Set<String> classes =
+          classesByPath.getOrDefault(key.path(), classesByPath.get(canonicalKeyPath));
       if (classes == null || !classes.containsAll(entry.getValue())) {
         throw new IOException(
             "Discovered root is not indexed in its owning JAR: " + key.coordinate());
       }
       return snapshot;
+    }
+
+    private static ElisionAnalysisModel.ArtifactSnapshot matchingSnapshot(
+        final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
+        final TrimArtifactRootKey key,
+        final Path canonicalKeyPath)
+        throws IOException {
+      for (final ElisionAnalysisModel.ArtifactSnapshot candidate : inventory) {
+        if (candidate.coordinate().equals(key.coordinate())
+            && canonicalPath(candidate.filePath()).equals(canonicalKeyPath)) {
+          return candidate;
+        }
+      }
+      throw new IOException(
+          "Discovered roots do not match an inventory artifact: " + key.coordinate());
     }
 
     private static Set<String> rootsFor(

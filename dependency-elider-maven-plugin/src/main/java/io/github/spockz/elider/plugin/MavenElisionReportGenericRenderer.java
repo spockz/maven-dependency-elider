@@ -151,16 +151,8 @@ final class MavenElisionReportGenericRenderer {
 
   private static void appendObservations(
       final List<String> lines, final List<FindingSourceObservation> observations) {
-    final boolean hasStale =
-        observations.stream()
-            .anyMatch(observation -> observation.status() == FindingSourceObservation.Status.STALE);
-    final boolean hasError =
-        observations.stream()
-            .anyMatch(observation -> observation.status() == FindingSourceObservation.Status.ERROR);
-    if (hasStale) {
-      lines.add("CVE Freshness: STALE (refresh failed; using last-good snapshots)");
-    } else if (hasError) {
-      lines.add("CVE Freshness: ERROR (refresh failed without complete last-good snapshots)");
+    if (!observations.isEmpty()) {
+      lines.add(freshnessSummary(observations));
     }
     lines.add(observations.isEmpty() ? "CVE Sources: none" : "CVE Sources:");
     for (final FindingSourceObservation observation : observations) {
@@ -176,6 +168,34 @@ final class MavenElisionReportGenericRenderer {
         lines.add("    Source diagnostics are in the JSON snapshot");
       }
     }
+  }
+
+  private static String freshnessSummary(final List<FindingSourceObservation> observations) {
+    final Set<FindingSourceObservation.Status> statuses =
+        java.util.EnumSet.noneOf(FindingSourceObservation.Status.class);
+    for (final FindingSourceObservation observation : observations) {
+      statuses.add(observation.status());
+    }
+    if (statuses.contains(FindingSourceObservation.Status.STALE)) {
+      return "CVE Freshness: STALE (refresh failed; using last-good snapshots)";
+    }
+    final boolean incomplete =
+        statuses.contains(FindingSourceObservation.Status.PARTIAL)
+            || (statuses.contains(FindingSourceObservation.Status.CURRENT)
+                && (statuses.contains(FindingSourceObservation.Status.ERROR)
+                    || statuses.contains(FindingSourceObservation.Status.UNAVAILABLE)));
+    if (incomplete) {
+      return "CVE Freshness: INCOMPLETE (partial or mixed source freshness; "
+          + "some sources failed or are incomplete)";
+    }
+    if (statuses.contains(FindingSourceObservation.Status.ERROR)) {
+      return "CVE Freshness: ERROR (refresh failed without complete last-good snapshots)";
+    }
+    if (statuses.contains(FindingSourceObservation.Status.UNAVAILABLE)) {
+      return "CVE Freshness: UNAVAILABLE (vulnerability cache and refresh sources "
+          + "are unavailable)";
+    }
+    return "CVE Freshness: CURRENT (all vulnerability sources are fresh)";
   }
 
   private static String source(final String provenance) {

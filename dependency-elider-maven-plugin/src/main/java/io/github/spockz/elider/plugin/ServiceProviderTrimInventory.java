@@ -93,7 +93,10 @@ final class ServiceProviderTrimInventory {
   private static DependencyDynamicRoots.RootScan serviceScan(
       final TrimCandidate candidate, final TrimScanInputs scanInputs) throws IOException {
     final Path source = candidate.archive().snapshot().filePath().toAbsolutePath().normalize();
-    final DependencyDynamicRoots.RootScan scan = scanInputs.dynamicRootScans().get(source);
+    DependencyDynamicRoots.RootScan scan = scanInputs.dynamicRootScans().get(source);
+    if (scan == null && java.nio.file.Files.exists(source)) {
+      scan = scanInputs.dynamicRootScans().get(source.toRealPath());
+    }
     if (scan == null) {
       throw new IOException(
           "Missing service descriptor scan for " + candidate.archive().snapshot().coordinate());

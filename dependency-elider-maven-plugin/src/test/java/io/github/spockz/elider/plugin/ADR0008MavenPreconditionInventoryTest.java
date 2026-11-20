@@ -225,15 +225,17 @@ final class ADR0008MavenPreconditionInventoryTest {
                     || provider.path().equals(testSource)
                     || provider.path().equals(testClass)
                     || provider.path().equals(testResource));
+    final Path realOutputClass = outputClass.toRealPath();
+    final Path realResource = resource.toRealPath();
     assertThat(snapshot.classProviders().providers())
         .anySatisfy(
             provider -> {
-              assertThat(provider.path()).isEqualTo(outputClass);
+              assertThat(provider.path()).isEqualTo(realOutputClass);
               assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_CLASS_FILE);
             })
         .anySatisfy(
             provider -> {
-              assertThat(provider.path()).isEqualTo(resource);
+              assertThat(provider.path()).isEqualTo(realResource);
               assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_RESOURCE_FILE);
             });
   }
@@ -367,6 +369,7 @@ final class ADR0008MavenPreconditionInventoryTest {
             pair);
     final boolean finalInventoryComplete = snapshot.complete();
 
+    final Path realTrimmedPath = trimmedPath.toRealPath();
     assertAll(
         "proof attribution uses original Maven input and selected staged bytes",
         () -> Assertions.assertTrue(finalInventoryComplete, "final inventory is complete"),
@@ -375,7 +378,7 @@ final class ADR0008MavenPreconditionInventoryTest {
                 .anySatisfy(
                     provider -> {
                       assertThat(provider.coordinate()).isEqualTo(fixture.coordinate());
-                      assertThat(provider.path()).isEqualTo(trimmedPath);
+                      assertThat(provider.path()).isEqualTo(realTrimmedPath);
                     }),
         () ->
             assertThat(result.groups())
@@ -391,8 +394,9 @@ final class ADR0008MavenPreconditionInventoryTest {
                     provider ->
                         assertAll(
                             () ->
-                                assertThat(provider.baselinePath()).isEqualTo(fixture.dependency()),
-                            () -> assertThat(provider.finalPath()).isEqualTo(trimmedPath),
+                                assertThat(provider.baselinePath())
+                                    .isEqualTo(fixture.dependency().toRealPath()),
+                            () -> assertThat(provider.finalPath()).isEqualTo(realTrimmedPath),
                             () ->
                                 assertThat(provider.attribution())
                                     .isEqualTo(PrerequisiteAbsenceAttribution.TRIMMED_CLASS))));
@@ -473,13 +477,14 @@ final class ADR0008MavenPreconditionInventoryTest {
             pair);
     final boolean finalInventoryComplete = snapshot.complete();
 
+    final Path realDroppedJar = droppedJar.toRealPath();
     assertAll(
         "whole-artifact removal is attributed from original resolved providers",
         () -> assertThat(retainedPlan.resolvedArtifacts()).hasSize(1),
         () -> Assertions.assertTrue(finalInventoryComplete, "final inventory is complete"),
         () ->
             assertThat(snapshot.classProviders().providers())
-                .noneMatch(provider -> provider.path().equals(droppedJar)),
+                .noneMatch(provider -> provider.path().equals(realDroppedJar)),
         () ->
             assertThat(proof.groups())
                 .singleElement()
@@ -497,7 +502,7 @@ final class ADR0008MavenPreconditionInventoryTest {
                                             assertAll(
                                                 () ->
                                                     assertThat(provider.baselinePath())
-                                                        .isEqualTo(droppedJar),
+                                                        .isEqualTo(realDroppedJar),
                                                 () -> assertThat(provider.finalPath()).isNull(),
                                                 () ->
                                                     assertThat(provider.attribution())
@@ -806,12 +811,11 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
 
+      final Path realAssertiveHelper =
+          fixture.productionOutput().resolve("app/Assertive$1.class").toRealPath();
       assertThat(snapshot.complete()).isTrue();
       assertThat(snapshot.classProviders().providers())
-          .anySatisfy(
-              provider ->
-                  assertThat(provider.path())
-                      .isEqualTo(fixture.productionOutput().resolve("app/Assertive$1.class")));
+          .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(realAssertiveHelper));
     }
   }
 
@@ -901,12 +905,14 @@ final class ADR0008MavenPreconditionInventoryTest {
               explicitProductionClassesAnalysis(fixture.analysis()),
               true);
 
+      final Path realApplicationClass = applicationClass.toRealPath();
       assertAll(
           "explicit production completeness plus inspected runtime providers is sufficient",
           () -> Assertions.assertTrue(snapshot.complete(), snapshot.classProviders().detail()),
           () ->
               assertThat(snapshot.classProviders().providers())
-                  .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(applicationClass)));
+                  .anySatisfy(
+                      provider -> assertThat(provider.path()).isEqualTo(realApplicationClass)));
     }
 
     @Test
@@ -2530,9 +2536,10 @@ final class ADR0008MavenPreconditionInventoryTest {
             PREREQUISITE_COORDINATE,
             "hidden.ShadedPrerequisite");
 
+    final Path realOutputTarget = outputTarget.toRealPath();
     assertThat(snapshot.complete()).isTrue();
     assertThat(snapshot.classProviders().providers())
-        .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(outputTarget));
+        .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(realOutputTarget));
     assertThatThrownBy(
             () ->
                 PreconditionProof.prove(
@@ -2613,8 +2620,10 @@ final class ADR0008MavenPreconditionInventoryTest {
   void socketFilesMakeInventoryIncompleteInsteadOfBeingSkipped() throws IOException {
     assumeUnixEnvironment();
     final Fixture fixture = fixture();
-    Files.createDirectories(fixture.productionResources());
-    final Path socketPath = fixture.productionResources().resolve("provider.sock");
+    // Keep UNIX socket paths under macOS's 104-byte sun_path limit.
+    final Path shortResources = Files.createTempDirectory(Path.of("/tmp"), "es");
+    fixture.project().getResources().get(0).setDirectory(shortResources.toString());
+    final Path socketPath = shortResources.resolve("p.sock");
 
     try (ServerSocketChannel socket = ServerSocketChannel.open(StandardProtocolFamily.UNIX)) {
       socket.bind(UnixDomainSocketAddress.of(socketPath));
@@ -2623,6 +2632,9 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       assertThat(snapshot.complete()).isFalse();
       assertThat(snapshot.classProviders().detail()).contains("Unsupported filesystem entry");
+    } finally {
+      Files.deleteIfExists(socketPath);
+      Files.deleteIfExists(shortResources);
     }
   }
 

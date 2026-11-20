@@ -82,7 +82,7 @@ import org.junit.jupiter.api.io.TempDir;
                 inputs.classNames(),
                 inputs.declaringArtifacts(),
                 inputs.resourceProviderArtifacts(),
-                inputs.scansByPath().get(declaring).resourceProviders()))
+                inputs.scansByPath().get(declaring.toRealPath()).resourceProviders()))
         .containsExactly(
             Set.of("org.example.FromC"),
             Set.of(

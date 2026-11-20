@@ -201,8 +201,10 @@ final class ForcedUnchangedSiblingClosureTest {
     final DependencyDynamicRoots.RootScan emptyScan =
         new DependencyDynamicRoots.RootScan(Set.of(), true);
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
-      refs.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
-      scans.put(snapshot.filePath(), emptyScan);
+      final ArtifactFileRef ref =
+          ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath());
+      refs.add(ref);
+      scans.put(ref.filePath(), emptyScan);
     }
     final Set<ArtifactCoordinate> retained =
         Set.of(coordinate("first"), coordinate("unchanged"), coordinate("candidate"));
@@ -310,20 +312,14 @@ final class ForcedUnchangedSiblingClosureTest {
     build.setDirectory(tempDir.resolve("target").toString());
     project.setBuild(build);
     final List<ArtifactFileRef> refs = new java.util.ArrayList<>();
-    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
-      refs.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
-    }
     final Map<Path, DependencyDynamicRoots.RootScan> scans =
-        snapshots.stream()
-            .collect(
-                java.util.stream.Collectors.toMap(
-                    ElisionAnalysisModel.ArtifactSnapshot::filePath,
-                    snapshot ->
-                        new DependencyDynamicRoots.RootScan(
-                            dynamicRoot && "first".equals(snapshot.coordinate().artifactId())
-                                ? Set.of("candidate.Linked")
-                                : Set.of(),
-                            true)));
+        new java.util.concurrent.ConcurrentHashMap<>();
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
+      final ArtifactFileRef ref =
+          ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath());
+      refs.add(ref);
+      scans.put(ref.filePath(), scanFor(snapshot, dynamicRoot));
+    }
     final Set<ArtifactCoordinate> retained =
         snapshots.stream()
             .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
@@ -418,6 +414,15 @@ final class ForcedUnchangedSiblingClosureTest {
     }
     writer.visitEnd();
     return writer.toByteArray();
+  }
+
+  private static DependencyDynamicRoots.RootScan scanFor(
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot, final boolean dynamicRoot) {
+    return new DependencyDynamicRoots.RootScan(
+        dynamicRoot && "first".equals(snapshot.coordinate().artifactId())
+            ? Set.of("candidate.Linked")
+            : Set.of(),
+        true);
   }
 
   private record Fixture(

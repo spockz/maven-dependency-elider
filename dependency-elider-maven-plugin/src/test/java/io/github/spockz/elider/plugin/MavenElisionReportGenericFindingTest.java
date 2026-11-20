@@ -196,6 +196,96 @@ class MavenElisionReportGenericFindingTest {
         });
   }
 
+  @Test
+  void distinguishesFreshIncompleteStaleErrorAndUnavailableCveFreshness() {
+    final FindingSourceObservation currentOsv =
+        new FindingSourceObservation(
+            Optional.of(FindingSource.OSV),
+            FindingSourceObservation.Status.CURRENT,
+            "osv-rev-1",
+            Instant.parse("2026-11-20T09:00:00Z"),
+            null,
+            List.of(),
+            513);
+    final FindingSourceObservation partialCveList =
+        new FindingSourceObservation(
+            Optional.of(FindingSource.CVE_LIST),
+            FindingSourceObservation.Status.PARTIAL,
+            "cve-rev-1",
+            Instant.parse("2026-11-20T09:00:00Z"),
+            "partial page",
+            List.of(),
+            10);
+    final FindingSourceObservation errorCveList =
+        new FindingSourceObservation(
+            Optional.of(FindingSource.CVE_LIST),
+            FindingSourceObservation.Status.ERROR,
+            null,
+            null,
+            "CVE List update failed",
+            List.of(),
+            0);
+    final FindingSourceObservation staleCveList =
+        new FindingSourceObservation(
+            Optional.of(FindingSource.CVE_LIST),
+            FindingSourceObservation.Status.STALE,
+            "cve-rev-0",
+            Instant.parse("2026-11-19T09:00:00Z"),
+            "refresh failed",
+            List.of(),
+            10);
+    final FindingSourceObservation unavailableCache =
+        new FindingSourceObservation(
+            Optional.empty(),
+            FindingSourceObservation.Status.UNAVAILABLE,
+            null,
+            null,
+            "cache unavailable",
+            List.of(),
+            0);
+
+    final List<String> freshLines =
+        MavenElisionReportGenericRenderer.render(List.of(), List.of(currentOsv));
+    final List<String> mixedIncompleteLines =
+        MavenElisionReportGenericRenderer.render(List.of(), List.of(currentOsv, errorCveList));
+    final List<String> partialLines =
+        MavenElisionReportGenericRenderer.render(List.of(), List.of(partialCveList));
+    final List<String> staleLines =
+        MavenElisionReportGenericRenderer.render(List.of(), List.of(currentOsv, staleCveList));
+    final List<String> errorLines =
+        MavenElisionReportGenericRenderer.render(List.of(), List.of(errorCveList));
+    final List<String> unavailableLines =
+        MavenElisionReportGenericRenderer.render(List.of(), List.of(unavailableCache));
+
+    assertAll(
+        "CVE freshness distinguishes fresh, incomplete, stale, error, and unavailable states",
+        () ->
+            assertThat(freshLines)
+                .contains("CVE Freshness: CURRENT (all vulnerability sources are fresh)"),
+        () ->
+            assertThat(mixedIncompleteLines)
+                .contains(
+                    "CVE Freshness: INCOMPLETE (partial or mixed source freshness; "
+                        + "some sources failed or are incomplete)"),
+        () ->
+            assertThat(partialLines)
+                .contains(
+                    "CVE Freshness: INCOMPLETE (partial or mixed source freshness; "
+                        + "some sources failed or are incomplete)"),
+        () ->
+            assertThat(staleLines)
+                .contains("CVE Freshness: STALE (refresh failed; using last-good snapshots)"),
+        () ->
+            assertThat(errorLines)
+                .contains(
+                    "CVE Freshness: ERROR (refresh failed without complete last-good snapshots)"),
+        () ->
+            assertThat(unavailableLines)
+                .contains(
+                    "CVE Freshness: UNAVAILABLE (vulnerability cache and refresh sources "
+                        + "are unavailable)"));
+  }
+
   // Validation precedes writing and replaying the same proof fixture.
   @Test
   void proofEvidenceRoundTripsAllOfAndMixedProviderObservationsOffline()
@@ -495,18 +585,18 @@ class MavenElisionReportGenericFindingTest {
                         serializedProof,
                         new SerializedProofContext(
                             candidate,
-                            candidateFinalPath,
+                            candidateFinalPath.toRealPath(),
                             baseline,
                             actualFinal,
                             new ProviderEvidencePaths(
                                 presentProvider,
                                 droppedProvider,
                                 trimmedProvider,
-                                presentBaselinePath,
-                                presentFinalPath,
-                                droppedBaselinePath,
-                                trimmedBaselinePath,
-                                trimmedFinalPath)))),
+                                presentBaselinePath.toRealPath(),
+                                presentFinalPath.toRealPath(),
+                                droppedBaselinePath.toRealPath(),
+                                trimmedBaselinePath.toRealPath(),
+                                trimmedFinalPath.toRealPath())))),
         () -> {
           Files.delete(candidateBaselinePath);
           Files.delete(candidateFinalPath);
@@ -708,7 +798,8 @@ class MavenElisionReportGenericFindingTest {
                               provider -> {
                                 assertThat(provider.attribution())
                                     .isEqualTo(PrerequisiteAbsenceAttribution.PRESENT);
-                                assertThat(provider.finalPath()).isEqualTo(presentPath);
+                                assertThat(provider.finalPath())
+                                    .isEqualTo(presentPath.toRealPath());
                               });
                     }),
         () ->

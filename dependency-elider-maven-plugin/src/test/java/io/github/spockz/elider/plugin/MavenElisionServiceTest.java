@@ -87,10 +87,11 @@ final class MavenElisionServiceTest {
             Set.of(),
             true);
 
-    assertThat(scannedPaths).containsExactly(jar);
+    final Path realJar = jar.toRealPath();
+    assertThat(scannedPaths).containsExactly(realJar);
     assertThat(inputs.classNames()).containsExactly("library.Provider");
     assertThat(inputs.declaringArtifacts()).containsExactlyInAnyOrder(first, second);
-    assertThat(inputs.scansByPath()).containsEntry(jar, expectedScan);
+    assertThat(inputs.scansByPath()).containsEntry(realJar, expectedScan);
   }
 
   @Test
@@ -120,7 +121,7 @@ final class MavenElisionServiceTest {
     final Artifact dependency = resolvedArtifact("library", "runtime", "library.jar");
     final File dependencyFile = dependency.getFile();
     final Path dependencyPath = dependencyFile.toPath();
-    final Path expectedPath = dependencyPath.toAbsolutePath().normalize();
+    final Path expectedPath = dependencyPath.toRealPath();
 
     final ElisionAnalysisModel.ArtifactSnapshot snapshot =
         MavenArtifactInventory.snapshots(List.of(dependency)).getFirst();

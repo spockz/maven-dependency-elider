@@ -228,7 +228,7 @@ import org.junit.jupiter.api.Test;
     assertThat(
             List.of(
                 prepared.dynamicRootInputs().classNames(),
-                prepared.dynamicRootInputs().scansByPath().get(declaring).roots(),
+                prepared.dynamicRootInputs().scansByPath().get(declaring.toRealPath()).roots(),
                 effective.trimAnalysis().candidateRoots().get(fixture.coordinate("a")),
                 effective.trimAnalysis().candidateRoots().get(fixture.coordinate("c")),
                 effective.effectiveDecision().retainedArtifacts(),

@@ -75,9 +75,9 @@ import org.junit.jupiter.api.io.TempDir;
         .containsExactly(
             Set.of("org.example.Versioned"),
             Set.of(
-                commaProvider.toAbsolutePath().normalize(),
-                mrjarProvider.toAbsolutePath().normalize(),
-                directoryProvider.toAbsolutePath().normalize()));
+                commaProvider.toRealPath(),
+                mrjarProvider.toRealPath(),
+                directoryProvider.toRealPath()));
   }
 
   /* package */
