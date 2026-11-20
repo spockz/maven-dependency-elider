@@ -45,13 +45,15 @@ public final class DependencyDynamicRoots {
       Set<String> roots,
       Set<ServiceDescriptor> unprovenConservativeServices,
       Set<String> unprovenConservativeRoots,
-      Set<String> featureRoots) {
+      Set<String> featureRoots,
+      Set<String> provenServiceRoots) {
     /** Defensively copies effective root sets. */
     public EffectiveRoots {
       roots = Set.copyOf(roots);
       unprovenConservativeServices = Set.copyOf(unprovenConservativeServices);
       unprovenConservativeRoots = Set.copyOf(unprovenConservativeRoots);
       featureRoots = Set.copyOf(featureRoots);
+      provenServiceRoots = Set.copyOf(provenServiceRoots);
     }
 
     /** Returns whether any dynamic roots were declared. */
@@ -117,8 +119,7 @@ public final class DependencyDynamicRoots {
         final boolean conservativeFallback,
         final NativeImageServiceLoaderPolicy.Selection featureSelection) {
       final Set<String> featureRoots = featureRoots(featureSelection);
-      final Set<String> effective = new LinkedHashSet<>(nonServiceRoots);
-      effective.addAll(featureRoots);
+      final Set<String> provenServiceRoots = new LinkedHashSet<>();
       final Set<ServiceDescriptor> unprovenServices = new LinkedHashSet<>();
       final Set<String> unprovenRoots = new LinkedHashSet<>();
       for (final ServiceDescriptor descriptor : serviceDescriptors) {
@@ -126,17 +127,20 @@ public final class DependencyDynamicRoots {
             provenServiceInterfaces.contains(descriptor.serviceInterface())
                 || descriptor.providers().stream().anyMatch(provenServiceInterfaces::contains);
         if (isProven) {
-          effective.add(descriptor.serviceInterface());
-          effective.addAll(descriptor.providers());
+          provenServiceRoots.add(descriptor.serviceInterface());
+          provenServiceRoots.addAll(descriptor.providers());
         } else if (conservativeFallback) {
-          effective.add(descriptor.serviceInterface());
-          effective.addAll(descriptor.providers());
           unprovenServices.add(descriptor);
           unprovenRoots.add(descriptor.serviceInterface());
           unprovenRoots.addAll(descriptor.providers());
         }
       }
-      return new EffectiveRoots(effective, unprovenServices, unprovenRoots, featureRoots);
+      final Set<String> effective = new LinkedHashSet<>(nonServiceRoots);
+      effective.addAll(featureRoots);
+      effective.addAll(provenServiceRoots);
+      effective.addAll(unprovenRoots);
+      return new EffectiveRoots(
+          effective, unprovenServices, unprovenRoots, featureRoots, provenServiceRoots);
     }
 
     /** Returns a copy of this scan augmented with additional class roots. */

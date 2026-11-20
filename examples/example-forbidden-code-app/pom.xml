@@ -75,6 +75,63 @@
 
     <profiles>
         <profile>
+            <id>prepare-forbidden-runtime</id>
+            <properties>
+                <elider.runtime.cacheDirectory>${project.build.directory}/prepared-runtimes</elider.runtime.cacheDirectory>
+                <elider.runtime.archiveName>runtime.zip</elider.runtime.archiveName>
+                <elide.runtimeInputs>${elider.runtime.cacheDirectory}/elider-target-jre/${elider.runtime.archiveName}</elide.runtimeInputs>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jreleaser</groupId>
+                        <artifactId>jdks-maven-plugin</artifactId>
+                        <version>1.26.0</version>
+                        <inherited>false</inherited>
+                        <configuration>
+                            <outputDirectory>${elider.runtime.cacheDirectory}</outputDirectory>
+                            <unpack>false</unpack>
+                            <jdks>
+                                <jdk>
+                                    <name>elider-target-jre</name>
+                                    <platform>${elider.runtime.platform}</platform>
+                                    <url>${elider.runtime.archiveUrl}</url>
+                                    <checksum>${elider.runtime.archiveSha256}</checksum>
+                                    <filename>${elider.runtime.archiveName}</filename>
+                                </jdk>
+                            </jdks>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>prepare-elider-runtime</id>
+                                <phase>initialize</phase>
+                                <goals><goal>setup-jdks</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <inherited>false</inherited>
+                        <executions>
+                            <execution>
+                                <id>check-elider-runtime-archive</id>
+                                <phase>initialize</phase>
+                                <goals><goal>enforce</goal></goals>
+                                <configuration>
+                                    <rules>
+                                        <requireFilesExist>
+                                            <files><file>${elide.runtimeInputs}</file></files>
+                                        </requireFilesExist>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>elide-forbidden-example</id>
             <properties>
                 <elide.skip>false</elide.skip>

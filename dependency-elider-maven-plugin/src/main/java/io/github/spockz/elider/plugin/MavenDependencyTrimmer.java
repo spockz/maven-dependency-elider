@@ -73,6 +73,7 @@ public final class MavenDependencyTrimmer {
         new TrimRequest(
             prepared.project(),
             options.session(),
+            options.environment(),
             prepared.resolvedSnapshots(),
             new TrimScanInputs(
                 prepared.index(),
@@ -99,21 +100,23 @@ public final class MavenDependencyTrimmer {
                 options.dynamicRoots().conservativeServiceLoaderRoots(),
                 options.trim().workers(),
                 options.trim().duplicateClasses()),
-            options.trim().cacheProducerResolution().identity());
+            options.trim().cacheProducerResolution().identity(),
+            options.runtimePlatforms());
     final List<DuplicateClasses.ToleratedDuplicate> duplicates =
         DuplicateClasses.resolveRetained(request);
+    final TrimExecutionEnvironment environment =
+        reportedEnvironment(request, effective.trimAnalysis().analyzedTiers());
     if (!options.trim().enabled()) {
       if (outputCheck != null) {
         outputCheck.check(Map.of());
       }
-      return TrimResult.empty(
-              new TrimExecutionEnvironment(
-                  effective.trimAnalysis().targetRelease(),
-                  effective.trimAnalysis().runtimeRelease()))
-          .withToleratedDuplicates(duplicates);
+      return TrimResult.empty(environment).withToleratedDuplicates(duplicates);
     }
     final EffectiveOutputPlan outputPlan = EffectiveOutputPlanFactory.create(effective);
-    final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());
+    final JdkPlatformContext context =
+        request.runtimePlatforms() == null
+            ? MavenPlatformContextHolder.forOperation(request.session())
+            : null;
     return EffectiveTrimOutput.trimEffectivePrepared(
             request,
             effective.trimAnalysis().targetRelease(),
@@ -121,7 +124,8 @@ public final class MavenDependencyTrimmer {
             context,
             outputPlan,
             outputCheck)
-        .withToleratedDuplicates(duplicates);
+        .withToleratedDuplicates(duplicates)
+        .withExecutionEnvironment(environment);
   }
 
   /* package */ static TrimExecutionEnvironment executionEnvironment(final TrimRequest request)
@@ -153,6 +157,24 @@ public final class MavenDependencyTrimmer {
     }
     return new TrimExecutionEnvironment(
         TrimPlatform.targetReleaseFromOptions(compilerOptions), Runtime.version().feature());
+  }
+
+  /* package */ static TrimExecutionEnvironment reportedEnvironment(
+      final TrimRequest request, final List<Integer> analyzed) throws IOException {
+    final TrimExecutionEnvironment releases = executionEnvironment(request);
+    final MavenRuntimePlatforms platforms = request.runtimePlatforms();
+    if (platforms == null) {
+      return releases;
+    }
+    final List<String> compiler =
+        request.environment() == null
+            ? MavenCompilerSettings.analysisTargetOptions(request.project(), request.session())
+            : MavenCompilerSettings.analysisTargetOptions(request.project(), request.environment());
+    return new TrimExecutionEnvironment(
+        releases.targetRelease(),
+        releases.runtimeRelease(),
+        MavenRuntimeCoverage.from(
+            platforms, releases.targetRelease(), !compiler.isEmpty(), analyzed));
   }
 
   /* package */ static TrimAnalysisResult analyzeInMemory(

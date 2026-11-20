@@ -68,7 +68,7 @@ final class MavenElisionReportPayloadValidator {
 
   /** Exact target and active runtime releases saved for report replay. */
   private static final Set<String> EXECUTION_ENVIRONMENT_FIELDS =
-      Set.of("targetRelease", "runtimeRelease");
+      Set.of("targetRelease", "runtimeRelease", "runtimeCoverage");
 
   /** Exact fields persisted for each applied ban outcome. */
   private static final Set<String> APPLIED_BAN_FIELDS =
@@ -670,6 +670,54 @@ final class MavenElisionReportPayloadValidator {
     }
     validateRelease(environment.get("targetRelease"), "targetRelease", 8);
     validateRelease(environment.get("runtimeRelease"), "runtimeRelease", 21);
+    validateRuntimeCoverage(environment.get("runtimeCoverage"));
+  }
+
+  private static void validateRuntimeCoverage(final JsonNode coverage) throws IOException {
+    if (!coverage.isObject()
+        || !fieldNames(coverage)
+            .equals(
+                Set.of(
+                    "inputs",
+                    "analyzedReleases",
+                    "compilerTargetExplicit",
+                    "compilerTargetWarning"))
+        || !coverage.get("inputs").isArray()
+        || !coverage.get("analyzedReleases").isArray()
+        || !coverage.get("compilerTargetExplicit").isBoolean()) {
+      throw new IOException("Invalid runtimeCoverage shape");
+    }
+    MavenElisionReportJsonPayloadShape.optionalText(
+        coverage.get("compilerTargetWarning"), "compilerTargetWarning");
+    for (final JsonNode release : coverage.get("analyzedReleases")) {
+      validateRelease(release, "analyzed release", 9);
+    }
+    final Set<String> strings =
+        Set.of(
+            "path",
+            "version",
+            "vendor",
+            "implementation",
+            "operatingSystem",
+            "architecture",
+            "contentIdentity",
+            "problem",
+            "linkageProblem");
+    for (final JsonNode input : coverage.get("inputs")) {
+      final Set<String> fields = fieldNames(input);
+      if (!input.isObject()
+          || fields.size() != strings.size() + 1
+          || !fields.contains("feature")
+          || !fields.containsAll(strings)) {
+        throw new IOException("Invalid runtimeCoverage input shape");
+      }
+      for (final String field : strings) {
+        MavenElisionReportJsonPayloadShape.optionalText(input.get(field), field);
+      }
+      if (!input.get("feature").isNull()) {
+        validateRelease(input.get("feature"), "runtime feature", 9);
+      }
+    }
   }
 
   private static void validateRelease(final JsonNode release, final String name, final int minimum)

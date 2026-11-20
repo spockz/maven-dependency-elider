@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.TierArchiveProjector.TierContext;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots.EffectiveRoots;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
@@ -87,29 +88,19 @@ final class TierRootResolution {
     return matching;
   }
 
-  /* package */ void addDynamicRoots(
+  /* package */ Set<String> addDynamicRoots(
       final List<ElisionAnalysisModel.ArtifactSnapshot> retainedLibraries,
       final List<TierContext> contexts,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner,
       final Set<ArtifactCoordinate> reachableArtifacts)
       throws IOException {
+    final Set<String> provenServices = new HashSet<>();
     for (final ElisionAnalysisModel.ArtifactSnapshot source : retainedLibraries) {
-      for (final String root :
-          TrimRootPlanner.dynamicRoots(operation.request(), source.filePath())) {
-        addDynamicRoot(root, contexts, rootsByOwner, reachableArtifacts);
-      }
+      final EffectiveRoots dynamic =
+          TrimRootPlanner.dynamicRoots(operation.request(), source.filePath());
+      addCommonRoots(dynamic.roots(), contexts, rootsByOwner, reachableArtifacts);
+      provenServices.addAll(dynamic.provenServiceRoots());
     }
-  }
-
-  private void addDynamicRoot(
-      final String root,
-      final List<TierContext> contexts,
-      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner,
-      final Set<ArtifactCoordinate> reachableArtifacts) {
-    for (final TierContext context : contexts) {
-      for (final ElisionAnalysisModel.ArtifactSnapshot owner : context.ownersOf(root)) {
-        addOwnedRoot(owner, root, rootsByOwner, reachableArtifacts);
-      }
-    }
+    return provenServices;
   }
 }

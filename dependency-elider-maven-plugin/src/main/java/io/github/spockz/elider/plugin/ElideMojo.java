@@ -145,7 +145,8 @@ public final class ElideMojo extends AbstractElisionMojo {
         sharedTrimOptions(),
         new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots),
         null,
-        closedWorld);
+        closedWorld,
+        configuredRuntimePlatforms());
   }
 
   private File effectiveProductionOutput(final boolean useProductionClasses) {

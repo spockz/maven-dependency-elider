@@ -68,7 +68,8 @@ public final class AnalyzeMojo extends AbstractElisionMojo {
                   sharedTrimOptions(),
                   new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots),
                   null,
-                  closedWorld),
+                  closedWorld,
+                  configuredRuntimePlatforms()),
               projectDependenciesResolver);
       verifyBanPrediction(prediction);
       final ExclusionReview exclusionReview = ExclusionReview.capture(project, session);
@@ -86,10 +87,30 @@ public final class AnalyzeMojo extends AbstractElisionMojo {
       publishReports(prediction, exclusionReview, snapshot, summary);
       logReport(prediction, snapshot, summary);
       MavenForbiddenCodeAssessment.enforce(forbiddenCode, getLog());
+    } catch (final ElisionReachabilityEngine.PlatformLinkageUnavailable unavailable) {
+      throw failedLinkage(unavailable);
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency analysis failed closed: " + exception.getMessage(), exception);
     }
+  }
+
+  private MojoFailureException failedLinkage(
+      final ElisionReachabilityEngine.PlatformLinkageUnavailable unavailable) {
+    try {
+      MavenForbiddenCodeAssessment.reportBlockedLinkage(
+          unavailable,
+          configuredVulnerabilityMappings(),
+          failOnForbiddenCode,
+          ForbiddenCodeAssessment.Mode.PREDICTED,
+          getLog());
+    } catch (final IOException policyFailure) {
+      policyFailure.addSuppressed(unavailable);
+      return new MojoFailureException(
+          "Dependency analysis failed closed: " + policyFailure.getMessage(), policyFailure);
+    }
+    return new MojoFailureException(
+        "Dependency analysis failed closed: " + unavailable.getMessage(), unavailable);
   }
 
   private void publishReports(

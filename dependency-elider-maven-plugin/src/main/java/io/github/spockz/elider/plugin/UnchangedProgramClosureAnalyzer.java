@@ -10,6 +10,7 @@ import io.github.spockz.elider.scanner.ArchiveClassScanner;
 import io.github.spockz.elider.trimmer.ClosureQueryPolicy;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,10 @@ final class UnchangedProgramClosureAnalyzer {
 
   /** Tracks scanned internal names per tier and owner so each class is parsed once. */
   private final Map<TierOwnerKey, Set<String>> scannedByOwner = new ConcurrentHashMap<>();
+
+  /** Supertypes shared by the images of each release. */
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  private final Map<Integer, TierRequiredHierarchy> hierarchyByRelease = new HashMap<>();
 
   /* package */ UnchangedProgramClosureAnalyzer(final int workers) {
     this.workers = workers;
@@ -54,6 +59,8 @@ final class UnchangedProgramClosureAnalyzer {
       final ScanTask task = tasks.get(index);
       final ScanOutcome outcome = outcomes.get(index);
       task.alreadyScanned().addAll(outcome.visitedInternal());
+      TierRequiredHierarchy.addToRelease(
+          hierarchyByRelease, context.release(), outcome.hierarchy());
       final Set<String> liveClasses = liveProgramClasses.get(task.owner().coordinate());
       if (liveClasses != null) {
         liveClasses.addAll(outcome.visitedInternal());
@@ -63,6 +70,10 @@ final class UnchangedProgramClosureAnalyzer {
               outcome.externalDotted(), task.owner(), context, candidates, roots);
     }
     return new TierClosureAnalyzer.ClosureIteration(changed, outcomes.size());
+  }
+
+  /* package */ Map<Integer, TierRequiredHierarchy> scannedHierarchy() {
+    return hierarchyByRelease;
   }
 
   private void collectTask(
@@ -114,18 +125,19 @@ final class UnchangedProgramClosureAnalyzer {
     final Set<String> tierClasses = task.context().classesOf(task.owner());
     final Set<String> visitedInternal = new LinkedHashSet<>();
     final Set<String> externalDotted = new LinkedHashSet<>();
+    final TierRequiredHierarchy hierarchy = new TierRequiredHierarchy();
     Set<String> frontier = task.pendingInternal();
     try (ArchiveClassScanner.Session scanner =
         ArchiveClassScanner.open(task.context().pathFor(task.owner()))) {
       while (!frontier.isEmpty()) {
-        final Map<String, Set<String>> perClass = scanner.scanSelected(frontier);
+        final Map<String, Set<String>> perClass = scanner.scanSelected(frontier, hierarchy::record);
         visitedInternal.addAll(frontier);
         frontier =
             collectNextFrontier(
                 perClass, tierClasses, task.alreadyScanned(), visitedInternal, externalDotted);
       }
     }
-    return new ScanOutcome(visitedInternal, externalDotted);
+    return new ScanOutcome(visitedInternal, externalDotted, hierarchy);
   }
 
   private static Set<String> collectNextFrontier(
@@ -158,5 +170,6 @@ final class UnchangedProgramClosureAnalyzer {
       Set<String> pendingInternal,
       Set<String> alreadyScanned) {}
 
-  private record ScanOutcome(Set<String> visitedInternal, Set<String> externalDotted) {}
+  private record ScanOutcome(
+      Set<String> visitedInternal, Set<String> externalDotted, TierRequiredHierarchy hierarchy) {}
 }

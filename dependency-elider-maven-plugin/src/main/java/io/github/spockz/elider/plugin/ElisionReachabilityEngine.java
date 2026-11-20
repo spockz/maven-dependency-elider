@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
 
@@ -33,18 +32,11 @@ final class ElisionReachabilityEngine {
     ElisionDecision policyInput = rawDecision;
     ElisionDecision effectiveDecision = evaluation.effectiveDecision(rawDecision);
     final Set<ArtifactCoordinate> forcedUnchanged = Set.of();
-    final Optional<EffectiveAnalysis> noTrimResult =
-        failClosedNoTrimResult(
-            prepared,
-            banPlan,
-            evaluation,
-            rawDecision,
-            effectiveDecision,
-            forcedUnchanged,
-            binding);
-    if (noTrimResult.isPresent()) {
-      return noTrimResult.orElseThrow();
+    if (canPublishUnchanged(prepared, banPlan, evaluation, effectiveDecision)) {
+      return unchangedWithoutClosure(
+          prepared, banPlan, evaluation, rawDecision, effectiveDecision, binding);
     }
+    requireSelectedLinkage(prepared);
     final Set<String> closureRoots = prepared.sourceRequiredClasses();
     Map<TrimArtifactRootKey, Set<String>> discoveredRoots = Map.of();
     TrimAnalysisResult analysis;
@@ -52,8 +44,7 @@ final class ElisionReachabilityEngine {
       final TrimRequest trimRequest =
           TrimRequestFactory.fromPreparedAnalysis(
               prepared, effectiveDecision.retainedArtifacts(), closureRoots);
-      analysis =
-          MavenDependencyTrimmer.analyzeInMemory(trimRequest, discoveredRoots, forcedUnchanged);
+      analysis = analyzeSelectedViews(prepared, trimRequest, discoveredRoots, forcedUnchanged);
       banPlan.verifyRetainedClosure(prepared, effectiveDecision, analysis, forcedUnchanged);
       final Set<ArtifactCoordinate> newlyReachedDrops =
           newlyReachedDrops(analysis, effectiveDecision);
@@ -84,18 +75,29 @@ final class ElisionReachabilityEngine {
     }
   }
 
-  private static Optional<EffectiveAnalysis> failClosedNoTrimResult(
+  private static boolean canPublishUnchanged(
+      final PreparedAnalysis prepared,
+      final MavenBanPlan banPlan,
+      final EffectiveGraphPolicy.Evaluation evaluation,
+      final ElisionDecision effectiveDecision) {
+    if (prepared.options().trim().enabled() || banPlan.requested()) {
+      return false;
+    }
+    final MavenRuntimePlatforms selected = prepared.options().runtimePlatforms();
+    return evaluation.failClosed()
+        || (effectiveDecision.elidedArtifacts().isEmpty()
+            && selected != null
+            && !selected.hasLinkage());
+  }
+
+  private static EffectiveAnalysis unchangedWithoutClosure(
       final PreparedAnalysis prepared,
       final MavenBanPlan banPlan,
       final EffectiveGraphPolicy.Evaluation evaluation,
       final ElisionDecision rawDecision,
       final ElisionDecision effectiveDecision,
-      final Set<ArtifactCoordinate> forcedUnchanged,
       final MavenElisionGraphBinding.Result binding)
       throws IOException {
-    if (prepared.options().trim().enabled() || !evaluation.failClosed() || banPlan.requested()) {
-      return Optional.empty();
-    }
     final TrimRequest request =
         TrimRequestFactory.fromPreparedAnalysis(
             prepared, effectiveDecision.retainedArtifacts(), prepared.sourceRequiredClasses());
@@ -112,18 +114,17 @@ final class ElisionReachabilityEngine {
             List.of(),
             List.of(),
             Map.of());
-    return Optional.of(
-        new EffectiveAnalysis(
-            prepared,
-            banPlan,
-            evaluation,
-            rawDecision,
-            effectiveDecision,
-            forcedUnchanged,
-            analysis,
-            binding.inventoryFingerprint(),
-            binding.operationFingerprint(),
-            projection(binding, evaluation)));
+    return new EffectiveAnalysis(
+        prepared,
+        banPlan,
+        evaluation,
+        rawDecision,
+        effectiveDecision,
+        Set.of(),
+        analysis,
+        binding.inventoryFingerprint(),
+        binding.operationFingerprint(),
+        projection(binding, evaluation));
   }
 
   /* package */ static Analysis finishEffectiveOutputs(final EffectiveAnalysis effective)
@@ -166,5 +167,46 @@ final class ElisionReachabilityEngine {
     final Set<ArtifactCoordinate> result = new LinkedHashSet<>(analysis.reachableArtifacts());
     result.retainAll(effectiveDecision.elidedArtifacts());
     return result;
+  }
+
+  private static void requireSelectedLinkage(final PreparedAnalysis prepared) throws IOException {
+    final MavenRuntimePlatforms platforms = prepared.options().runtimePlatforms();
+    if (platforms != null) {
+      try {
+        platforms.requireLinkage();
+      } catch (final IOException exception) {
+        throw new PlatformLinkageUnavailable(prepared, exception);
+      }
+    }
+  }
+
+  private static TrimAnalysisResult analyzeSelectedViews(
+      final PreparedAnalysis prepared,
+      final TrimRequest trimRequest,
+      final Map<TrimArtifactRootKey, Set<String>> discoveredRoots,
+      final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException, MojoFailureException {
+    try {
+      return MavenDependencyTrimmer.analyzeInMemory(trimRequest, discoveredRoots, forcedUnchanged);
+    } catch (final TierRootPlanner.MissingRequiredLinkage exception) {
+      throw new PlatformLinkageUnavailable(prepared, exception);
+    }
+  }
+
+  /** Retains prepared inputs so policy diagnostics can still be assessed. */
+  /* package */ static final class PlatformLinkageUnavailable extends IOException {
+    private static final long serialVersionUID = 1L;
+
+    /** Prepared inventory available independently of linkage. */
+    private final transient PreparedAnalysis preparedInputs;
+
+    private PlatformLinkageUnavailable(final PreparedAnalysis prepared, final IOException cause) {
+      super(cause.getMessage(), cause);
+      this.preparedInputs = prepared;
+    }
+
+    /* package */ PreparedAnalysis prepared() {
+      return preparedInputs;
+    }
   }
 }

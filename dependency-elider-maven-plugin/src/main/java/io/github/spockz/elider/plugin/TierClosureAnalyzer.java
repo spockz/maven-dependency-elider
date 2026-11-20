@@ -9,6 +9,7 @@ import io.github.spockz.elider.plugin.TierCandidatePlanner.TierCandidate;
 import io.github.spockz.elider.plugin.TierRootPlanner.RootPlan;
 import io.github.spockz.elider.trimmer.ClosureQueryPolicy;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
+import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /** Propagates references until tier candidate roots stop changing. */
+@SuppressWarnings("PMD.CouplingBetweenObjects") // Closure and linkage share prepared archive data.
 final class TierClosureAnalyzer {
   /** Bounds and policy belong to this analysis operation. */
   private final MultiReleaseTrimContext operation;
@@ -39,7 +41,8 @@ final class TierClosureAnalyzer {
   /* package */ ClosureResult analyzeToFixedPoint(
       final List<TierContext> contexts,
       final RootPlan roots,
-      final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates)
+      final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates,
+      final TrimAnalysisSession session)
       throws IOException {
     final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> targetAnalyses =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
@@ -60,6 +63,12 @@ final class TierClosureAnalyzer {
       changed = iteration.rootsChanged();
       analysisRuns += iteration.analysisRuns();
     } while (changed);
+    TierRequiredHierarchy.verify(
+        operation.request(),
+        contexts,
+        roots.linkageRoots(),
+        unchangedAnalyzer == null ? Map.of() : unchangedAnalyzer.scannedHierarchy(),
+        session);
     final Map<ArtifactCoordinate, Set<String>> immutableLiveProgramClasses =
         LinkedHashMap.newLinkedHashMap(liveProgramClasses.size());
     for (final Map.Entry<ArtifactCoordinate, Set<String>> entry : liveProgramClasses.entrySet()) {
@@ -224,7 +233,9 @@ final class TierClosureAnalyzer {
           entry = entries.get(index);
       final ElisionAnalysisModel.ArtifactSnapshot snapshot = entry.getKey();
       final DependencyJarTrimmer.TrimAnalysis analysis = analyses.get(index);
-      if (context.release() == operation.targetRelease()) {
+      if (operation.request().runtimePlatforms() != null) {
+        targetAnalyses.merge(snapshot.coordinate(), analysis, TierClosureAnalyzer::unionAnalyses);
+      } else if (context.release() == operation.targetRelease()) {
         targetAnalyses.put(snapshot.coordinate(), analysis);
       }
       changed |=
@@ -232,6 +243,22 @@ final class TierClosureAnalyzer {
               analysis.reachableLibraryClasses(), snapshot, context, candidates, roots);
     }
     return new ClosureIteration(changed, analyses.size());
+  }
+
+  private static DependencyJarTrimmer.TrimAnalysis unionAnalyses(
+      final DependencyJarTrimmer.TrimAnalysis first,
+      final DependencyJarTrimmer.TrimAnalysis second) {
+    return new DependencyJarTrimmer.TrimAnalysis(
+        Math.max(first.totalClasses(), second.totalClasses()),
+        union(first.retainedClasses(), second.retainedClasses()),
+        union(first.roots(), second.roots()),
+        union(first.reachableLibraryClasses(), second.reachableLibraryClasses()));
+  }
+
+  private static Set<String> union(final Set<String> first, final Set<String> second) {
+    final Set<String> combined = new TreeSet<>(first);
+    combined.addAll(second);
+    return Set.copyOf(combined);
   }
 
   private static DependencyJarTrimmer.TrimAnalysis candidateAnalysis(

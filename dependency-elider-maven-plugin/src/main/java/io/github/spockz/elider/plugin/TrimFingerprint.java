@@ -43,9 +43,31 @@ final class TrimFingerprint {
       JdkPlatformContext platformContext,
       List<Integer> analyzedTiers,
       String outputContext,
-      Optional<CompatibilityIdentity> producerIdentity) {
+      Optional<CompatibilityIdentity> producerIdentity,
+      MavenRuntimePlatforms runtimePlatforms) {
     FingerprintOptions {
       Objects.requireNonNull(producerIdentity, "producerIdentity");
+    }
+
+    /* package */ FingerprintOptions(
+        final int runtimeRelease,
+        final int release,
+        final int schemaVersion,
+        final String engineVersion,
+        final JdkPlatformContext platformContext,
+        final List<Integer> analyzedTiers,
+        final String outputContext,
+        final Optional<CompatibilityIdentity> producerIdentity) {
+      this(
+          runtimeRelease,
+          release,
+          schemaVersion,
+          engineVersion,
+          platformContext,
+          analyzedTiers,
+          outputContext,
+          producerIdentity,
+          null);
     }
   }
 
@@ -88,8 +110,13 @@ final class TrimFingerprint {
       candidateIdentities.add("effective-output-context:" + options.outputContext());
     }
     candidateIdentities.add("runtime-release:" + options.runtimeRelease());
-    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots =
-        List.of(options.platformContext().snapshot());
+    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots;
+    if (options.runtimePlatforms() == null) {
+      platformSnapshots = List.of(options.platformContext().snapshot());
+    } else {
+      platformSnapshots = options.runtimePlatforms().requireLinkage();
+      candidateIdentities.add("analyzed-runtime-views:" + options.analyzedTiers());
+    }
     final String value =
         fingerprintForPlatformSnapshots(
             candidateIdentities,

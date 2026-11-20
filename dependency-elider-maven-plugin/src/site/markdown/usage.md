@@ -95,6 +95,8 @@ Process exit status: 0
 [INFO] Snapshot: analysis prediction at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [21]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -1005,7 +1007,7 @@ If the requested lifecycle reaches `test`, the guard requires the standard Maven
 | `elide.snykApiBaseUri` | `https://api.snyk.io` | Snyk regional HTTPS API origin; only supported Snyk API hosts are accepted. |
 | `elide.retainDuplicateClassOwners` | *(none)* | Comma-separated class names or globs (`*` within a package, `**` across packages, e.g. `org.example.**`). When a matching class is present in several dependency JARs, every owning JAR is retained whole and byte-identical, including owners that would otherwise be dropped. Unmatched duplicates still fail the build. |
 | `elide.trimDuplicateClassOwners` | *(none)* | Comma-separated class names or globs with the same syntax. Every matching duplicate class is kept in every owning JAR, including owners that would otherwise be dropped; with `trimJars=true`, their other unused classes can still be trimmed. If both lists match a class, `retainDuplicateClassOwners` wins; the same pattern in both lists is rejected. |
-| `elide.mrjarStrategy` | `vertical-shading` | With `trimJars=true`, `vertical-shading` elevates and trims the configured compiler release view. Higher-tier entries are preserved while their analyzed bodies retain sibling dependencies. Set to `pass-through` to preserve the entire multi-release input JAR byte-identically; when another dependency is trimmed, the unchanged MRJAR still contributes closure through the Maven runtime release. |
+| `elide.mrjarStrategy` | `vertical-shading` | With `trimJars=true`, `vertical-shading` elevates and trims the configured compiler release view. Higher-tier entries are preserved while their analyzed bodies retain sibling dependencies. Set to `pass-through` to preserve the entire multi-release input JAR byte-identically. When another dependency is trimmed, the unchanged MRJAR contributes closure for the selected runtime views. |
 | `elide.failOnUnsupportedModuleInfo` | `false` | When `false`, JARs with root `module-info.class` pass through unchanged on the classpath. When `true`, they fail the build. |
 | `elide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader dynamic roots declared in `META-INF/services/`. When `false`, unproven SPI roots are pruned. |
 | `elide.summaryFile` | `target/dependency-elider-report.json` | Path for the persisted elision snapshot read by `report`. |
@@ -1036,9 +1038,9 @@ Set `-Delide.trimWorkers=2` to cap trimming at two workers. This setting limits 
 * **Framework Roots**: Service providers (`META-INF/services`), Spring factories, and GraalVM native-image configs automatically protect declaring and provider JARs from whole-artifact removal.
 * **ServiceLoader SPI Dynamic Roots**: Application bytecode is scanned for constant `ServiceLoader.load` invocations to prove SPI usage. When `conservativeServiceLoaderRoots` is `true` (default), unproven SPI providers are retained for runtime safety. Set it to `false` to permit pruning unproven providers when your application does not need them. Retained declared code prevents omission proof under the common finding checks.
 * **Intra-JAR Trimming**: Trimmed JARs are written to `target/elided-artifacts/` with original JARs left untouched. Digital signatures are stripped to maintain archive validity, while resources, licenses, and SPI descriptors are preserved.
-* **Multi-Release and Module Descriptors**: With JAR trimming enabled, Elider selects the effective compiler release, then target, as its analysis target; if neither is configured, it uses the active runtime feature as an analysis default. The selected target view is elevated and trimmed. All higher-tier entries remain byte-identical except versioned `module-info.class`, which is removed. Bodies at class-tier breakpoints through the Maven runtime release contribute to sibling closure; tiers above that runtime remain outside the verified linkage boundary. The active JDK class table comes from Maven's runtime and does not emulate a historical target API. Set `elide.mrjarStrategy=pass-through` to preserve the whole source archive. Root module descriptors keep the existing classpath pass-through behavior.
+* **Multi-Release and Module Descriptors**. With JAR trimming enabled, Elider uses the effective compiler release, then target, then the Maven JVM's feature release as the output baseline. Elider elevates and trims the baseline view. Higher-tier entries remain byte-identical except versioned `module-info.class`, which Elider removes. Code selected by each supplied runtime release contributes to sibling closure using that image's class table. Set `elide.mrjarStrategy=pass-through` to preserve the whole source archive. Root module descriptors keep the classpath pass-through behavior.
 * **Exact Pass-Through (`trimSkipArtifacts`)**: Pins specified dependencies byte-identical while allowing their classes to resolve external links into trimmed sibling dependencies. Missing references originating in the unchanged JAR are tolerated; reachable missing references from a sibling being transformed still fail analysis. This also applies to retained `provided` and `system` JARs and to dependencies that graph or bytecode reachability requires Elider to retain unchanged. Their resolved bytecode and dynamic roots contribute to sibling closure, including analyzed multi-release tiers. In an `unresolved references` error, the `analysis candidate` is the archive whose closure is being analyzed, while the class before `->` owns the unresolved reference and may be in a different JAR. Select the exact resolved coordinate of a compile/runtime owner for pass-through if it must remain unchanged. An absent dependency's own classes and outgoing references are outside the analyzed graph.
-* **Tolerated duplicate classes**: By default duplicate class ownership fails analysis because class-loading order would be ambiguous. `retainDuplicateClassOwners` and `trimDuplicateClassOwners` let you accept specific duplicates explicitly, preserving all providers and the dependency closure of each implementation. Both policies cover the production analysis classpath, including `provided` and `system` owners, which remain untrimmed. Multi-release duplicates use the effective class views through the greater of the analysis target and Maven runtime release; inactive versioned entries do not create duplicate findings. Tolerated duplicates are listed in the build log and under `toleratedDuplicates` in `dependency-elider-report.json` and the Analyze class-usage report (class name, action `RETAIN_JARS` or `TRIM_OTHER_CLASSES`, and owning coordinates). The saved `report` goal replays these findings.
+* **Tolerated duplicate classes**. By default duplicate class ownership fails analysis because class-loading order would be ambiguous. `retainDuplicateClassOwners` and `trimDuplicateClassOwners` let you accept specific duplicates explicitly, preserving all providers and the dependency closure of each implementation. Both policies cover the production analysis classpath, including `provided` and `system` owners, which remain untrimmed. Multi-release duplicates use the effective views of the selected runtimes. Tolerated duplicates are listed in the build log and under `toleratedDuplicates` in `dependency-elider-report.json` and the Analyze class-usage report (class name, action `RETAIN_JARS` or `TRIM_OTHER_CLASSES`, and owning coordinates). The saved `report` goal replays these findings.
 * **Native-image argument policy**: Class roots, package roots, configuration references, and descriptor fields in the audited GraalVM Native Image 21.0.12+7.1 inventory are modeled. Invalid recognized inputs fail clearly. Other syntactically valid arguments are accepted without inferred roots; unknown future options are outside the completeness guarantee. See [ADR-0009](../../../../docs/adr/0009-permissive-graalvm-native-image-metadata-ingestion.md).
 
 ### Using Post-Compile Elision and Inspecting the Dependency Tree
@@ -1141,6 +1143,84 @@ Map specific vulnerabilities to code symbols in `pom.xml`:
 </configuration>
 ```
 
+### Runtime Inputs
+
+List the deployment images that should provide platform linkage evidence. Supply installed
+modular Java 9+ homes or ZIP, `tar.gz`, and `tgz` archives. Relative paths resolve from the
+consuming Maven module. For direct goals, use a comma-separated list such as
+`-Delide.runtimeInputs=/opt/jre-21,/opt/archives/jre-25.tar.gz`.
+
+```xml
+<configuration>
+  <runtimeInputs>
+    <runtimeInput>/opt/jre-21</runtimeInput>
+    <runtimeInput>/opt/archives/jre-25.tar.gz</runtimeInput>
+  </runtimeInputs>
+</configuration>
+```
+
+To use the JDK that runs Maven, list `${java.home}` explicitly. Elider analyzes each selected
+release view and retains the classes needed by their combined closure. The compiler target
+still controls the MRJAR output baseline. A project targeting Java 21 can select only a Java
+25 image. The report and its replay warn that Java 21 is outside the supplied coverage.
+Required production classes and supertypes must resolve in each selected runtime and its
+dependency view. This includes providers admitted through proven service loading.
+Supported metadata retains classes conservatively without proving that the application
+loads them, so their optional hierarchies do not require resolution.
+Elider merges retained classes after checking the individual views.
+The report lists inspected images and marks runtime releases as analyzed once linkage
+analysis completes for all selected images.
+
+Unavailable images block elision or trimming that requires their linkage evidence.
+Independent JAR findings and direct forbidden invocations remain reportable. Runtime
+inputs stay outside application dependencies and SBOMs. Elider uses a supported JRT
+reader from the JDK running Maven and treats Java 8 `rt.jar` or unsupported modular
+images as unavailable.
+
+For named production output, Elider resolves module requirements and JPMS services from
+the selected system modules. Classpath applications use the available system modules
+conservatively. Application dependency module paths and deployment-specific module options
+are outside this scope.
+With one installed image, Elider uses `jdeps` for optional module advice when the tool can
+read that image through the Maven JDK's JRT provider. A tool or linkage failure leaves the
+advice unavailable.
+
+#### Prepare a compressed runtime with Maven
+
+The forbidden-code example includes an opt-in `prepare-forbidden-runtime` profile. Its
+JReleaser JDKs Maven Plugin execution accepts a published archive URL and SHA-256,
+keeps the runtime compressed, and checks the destination during `initialize`.
+Supply the publisher's checksum and the archive's platform. A reference image represents
+the deployment only if it is the deployment image.
+[JDKs Maven Plugin documentation](https://jreleaser.org/guide/latest/tools/jdks-maven.html)
+
+```sh
+./mvnw -f examples/example-forbidden-code-app/pom.xml -Pprepare-forbidden-runtime \
+  "-Delider.runtime.archiveUrl=$JRE_URL" "-Delider.runtime.archiveSha256=$JRE_SHA256" \
+  "-Delider.runtime.platform=$JRE_PLATFORM" initialize
+```
+
+The profile hands Elider the path
+`${elider.runtime.cacheDirectory}/elider-target-jre/${elider.runtime.archiveName}`.
+The default name is `runtime.zip`. Set `-Delider.runtime.archiveName=runtime.tar.gz`
+for a tarball. Choose a cache directory outside `target` to keep downloads across
+`clean`. For offline use, leave acquisition inactive and pass the prepared path in
+`elide.runtimeInputs`. A direct `analyze` or `elide` command requires prior preparation.
+
+Activating both `prepare-forbidden-runtime` and `elide-forbidden-example` schedules
+preparation before Elide at `process-classes`. The direct downloader execution
+`org.jreleaser:jdks-maven-plugin:1.26.0:setup-jdks@prepare-elider-runtime` skips the
+lifecycle and the Enforcer check. Configure acquisition on one reactor project and
+list the shared archive path in each consuming module.
+
+Key a CI download cache by the downloader goal and plugin version, archive URL,
+publisher checksum, platform, and archive name. Elider stores derived indexes for
+other runtime images under `.elider-runtime-index` in Maven's local repository.
+The index key includes the module image bytes, inspected release metadata and reader
+policy. Each goal validates the current image before reusing an index, including when a
+reactor module replaces the archive at the same path. This directory survives `clean`
+and can be removed to reclaim space.
+
 ### Forbidden Code Policy
 
 Add `forbiddenSymbols` to an explicit POM mapping, or use `forbidDeclaredCode=true` to select
@@ -1173,13 +1253,13 @@ for your artifact.
 | :--- | :--- |
 | `MAVEN_ARTIFACT` (default) | Exact `groupId`, `artifactId`, `type` (default `jar`), and `classifier` (default empty) in the effective non-test dependency inventory. |
 | `PROJECT_OUTPUT` | The current project's identity and version. Supply the version scope and omit dependency coordinates. |
-| `JAVA_RUNTIME` | The Java runtime for the compiler target release. Supply the version scope and omit dependency coordinates. |
+| `JAVA_RUNTIME` | Each explicitly selected Java runtime image. Supply the version scope and omit dependency coordinates. |
 
 A mapping requires an exact `version` or an explicit `versionRangeSpec`. Use `(,)` to cover all
 versions of the selected component. The range controls policy scope. `assertsAffected=true`
-separately asserts CVE affectedness for that scope. For runtime rules, a matching active
-runtime supplies the actual version and image identity. Numeric predicates compare to that
-runtime's feature and update version. A missing target image or unsupported runtime version
+separately asserts CVE affectedness for that scope. Runtime rules use each inspected image's
+version and the multi-release view selected by its feature release. Numeric predicates compare
+the resolved runtime version components. An unavailable image or unsupported runtime version
 predicate leaves version applicability `UNKNOWN`. A direct method match can still violate policy.
 
 | Example symbol | Selects |
@@ -1285,6 +1365,8 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: <RUNTIME_RELEASE>
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -1361,6 +1443,8 @@ Process exit status: 0
 [INFO] Snapshot: analysis prediction at <TIMESTAMP>
 [INFO] Analysis target JDK release: <RUNTIME_RELEASE>
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -1440,6 +1524,8 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: <RUNTIME_RELEASE>
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true

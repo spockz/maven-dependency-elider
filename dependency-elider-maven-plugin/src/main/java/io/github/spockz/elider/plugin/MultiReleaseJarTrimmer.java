@@ -74,7 +74,11 @@ final class MultiReleaseJarTrimmer {
     final TierRootPlanner.RootPlan roots =
         new TierRootPlanner(operation)
             .findRoots(
-                prepared.inventory(), prepared.projections(), prepared.classTables().byRelease());
+                prepared.inventory(),
+                prepared.projections(),
+                prepared.projections().stream()
+                    .map(TierArchiveProjector.TierContext::jdkClassTable)
+                    .toList());
     final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidatePlanner.TierCandidate>
         candidates =
             new TierCandidatePlanner(operation)
@@ -90,9 +94,10 @@ final class MultiReleaseJarTrimmer {
       try {
         closure =
             new TierClosureAnalyzer(operation)
-                .analyzeToFixedPoint(preparedContexts.contexts(), roots, candidates);
+                .analyzeToFixedPoint(
+                    preparedContexts.contexts(), roots, candidates, preparedContexts.session());
       } finally {
-        preparedContexts.clearSnapshots();
+        preparedContexts.session().clearSnapshots();
       }
     }
     return new TierAnalysisResultBuilder(operation)

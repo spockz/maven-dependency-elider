@@ -47,6 +47,7 @@ import org.apache.maven.project.MavenProject;
   "PMD.TooManyMethods",
   "PMD.CouplingBetweenObjects",
   "PMD.GodClass",
+  "PMD.CyclomaticComplexity",
   "PMD.ExcessiveImports",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.UseConcurrentHashMap"
@@ -95,7 +96,8 @@ final class MavenForbiddenCodeAssessment {
                 ProductionEvidence.predicted(prediction.evidence(), productionOutput),
                 prediction.inputArtifacts(),
                 Set.copyOf(prediction.wouldElideArtifacts()),
-                prediction.banPlan()),
+                prediction.banPlan(),
+                prediction.runtimePlatforms()),
             snapshot -> Provider.predicted(snapshot.filePath(), trims.get(snapshot.coordinate())));
   }
 
@@ -115,8 +117,33 @@ final class MavenForbiddenCodeAssessment {
                 ProductionEvidence.observed(prepared),
                 prepared.resolvedSnapshots(),
                 analysis.effectiveDecision().elidedArtifacts(),
-                analysis.banPlan()),
+                analysis.banPlan(),
+                prepared.options().runtimePlatforms()),
             snapshot -> Provider.observed(snapshot, archives.get(snapshot.coordinate())));
+  }
+
+  static List<ForbiddenCodeAssessment> inspectUnchanged(
+      final PreparedAnalysis prepared,
+      final ConfiguredVulnerabilityMappings configuration,
+      final boolean enforce,
+      final Mode mode)
+      throws IOException {
+    final ElisionAnalysisModel.AnalysisOptions options = prepared.options();
+    final int target =
+        MavenDependencyTrimmer.executionEnvironment(
+                prepared.project(), options.session(), options.environment(), false)
+            .targetRelease();
+    return new MavenForbiddenCodeAssessment(mode, target, enforce)
+        .assess(
+            configuration.forbiddenRules(),
+            new Inventory(
+                prepared.project(),
+                ProductionEvidence.observed(prepared),
+                prepared.resolvedSnapshots(),
+                Set.of(),
+                prepared.banPlan(),
+                options.runtimePlatforms()),
+            snapshot -> Provider.predicted(snapshot.filePath(), null));
   }
 
   static void enforce(final List<ForbiddenCodeAssessment> results, final Log log)
@@ -147,6 +174,24 @@ final class MavenForbiddenCodeAssessment {
                     + "). "
                     + row.reason()));
     throw new IOException("Forbidden code policy found " + violations.size() + " violation(s)");
+  }
+
+  static void reportBlockedLinkage(
+      final ElisionReachabilityEngine.PlatformLinkageUnavailable unavailable,
+      final ConfiguredVulnerabilityMappings configuration,
+      final boolean enforce,
+      final Mode mode,
+      final Log log)
+      throws IOException {
+    final List<ForbiddenCodeAssessment> rows =
+        inspectUnchanged(unavailable.prepared(), configuration, enforce, mode);
+    if (log.isWarnEnabled()) {
+      log.warn(unavailable.getMessage());
+      final List<String> lines = new ArrayList<>();
+      MavenElisionReportRenderer.renderForbiddenCode(rows, lines);
+      lines.forEach(log::warn);
+    }
+    enforce(rows, log);
   }
 
   private List<ForbiddenCodeAssessment> assess(
@@ -442,22 +487,62 @@ final class MavenForbiddenCodeAssessment {
       final ProviderLookup providers,
       final List<ForbiddenCodeAssessment> rows)
       throws IOException {
+    if (rules.isEmpty()) {
+      return;
+    }
+    final Map<Integer, Map<ForbiddenSymbol, List<RuntimeCallHit>>> viewMatches = new HashMap<>();
+    final MavenRuntimePlatforms selected = inventory.runtimePlatforms();
+    if (selected == null || selected.inputs().isEmpty()) {
+      assessRuntimeView(
+          rules,
+          inventory,
+          providers,
+          rows,
+          new MavenRuntimePlatforms.Input(
+              null, null, "No inspected Java runtime image: elide.runtimeInputs is empty"),
+          viewMatches);
+    } else {
+      for (final MavenRuntimePlatforms.Input input : selected.inputs()) {
+        final int release =
+            input.platform() == null ? targetRelease : input.platform().runtimeRelease();
+        new MavenForbiddenCodeAssessment(mode, release, enforcementEnabled)
+            .assessRuntimeView(rules, inventory, providers, rows, input, viewMatches);
+      }
+    }
+  }
+
+  private void assessRuntimeView(
+      final List<ForbiddenCodeRule> rules,
+      final Inventory inventory,
+      final ProviderLookup providers,
+      final List<ForbiddenCodeAssessment> rows,
+      final MavenRuntimePlatforms.Input input,
+      final Map<Integer, Map<ForbiddenSymbol, List<RuntimeCallHit>>> viewMatches)
+      throws IOException {
     final Map<ForbiddenCodeRule, ForbiddenCodeAssessment> scoped = new java.util.LinkedHashMap<>();
     for (final ForbiddenCodeRule rule : rules) {
-      scoped.put(rule, runtimeScope(rule));
+      scoped.put(rule, runtimeScope(rule, input));
     }
-    final List<ForbiddenSymbol> symbols =
-        scoped.entrySet().stream()
-            .filter(
-                entry ->
-                    entry.getValue().versionApplicability()
-                        != ForbiddenCodeAssessment.VersionApplicability.NOT_APPLICABLE)
-            .map(entry -> entry.getKey().symbol())
-            .filter(symbol -> symbol.method() != null)
-            .distinct()
-            .toList();
-    final Map<ForbiddenSymbol, List<RuntimeCallHit>> matches =
-        symbols.isEmpty() ? Map.of() : runtimeMatches(inventory, providers, symbols);
+    if (scoped.values().stream()
+        .allMatch(
+            row ->
+                row.versionApplicability()
+                    == ForbiddenCodeAssessment.VersionApplicability.NOT_APPLICABLE)) {
+      rows.addAll(scoped.values());
+      return;
+    }
+    if (!viewMatches.containsKey(targetRelease)) {
+      final List<ForbiddenSymbol> symbols =
+          rules.stream()
+              .map(ForbiddenCodeRule::symbol)
+              .filter(symbol -> symbol.method() != null)
+              .distinct()
+              .toList();
+      viewMatches.put(
+          targetRelease,
+          symbols.isEmpty() ? Map.of() : runtimeMatches(inventory, providers, symbols));
+    }
+    final Map<ForbiddenSymbol, List<RuntimeCallHit>> matches = viewMatches.get(targetRelease);
     scoped.forEach((rule, row) -> rows.add(runtimeResult(rule, row, matches.get(rule.symbol()))));
   }
 
@@ -557,25 +642,29 @@ final class MavenForbiddenCodeAssessment {
                             .toList()));
   }
 
-  private ForbiddenCodeAssessment runtimeScope(final ForbiddenCodeRule rule) {
-    final Runtime.Version active = Runtime.version();
-    if (targetRelease != active.feature()) {
+  private ForbiddenCodeAssessment runtimeScope(
+      final ForbiddenCodeRule rule, final MavenRuntimePlatforms.Input input) {
+    if (input.platform() == null) {
       return assessment(
           rule,
           new Component(null, null),
           ForbiddenCodeAssessment.VersionApplicability.UNKNOWN,
-          Observation.of(
+          new Observation(
               Status.UNKNOWN,
               NO_EVIDENCE,
+              Objects.toString(input.path(), null),
+              List.of(),
               false,
-              "No inspected Java runtime image for target release " + targetRelease));
+              input.problem()));
     }
+    final Runtime.Version active = input.platform().runtimeVersion();
+    final String implementation = input.platform().metadata().vendor();
     final Component component =
-        new Component(System.getProperty("java.runtime.name"), active.toString());
+        new Component(Objects.toString(implementation, "Java runtime"), active.toString());
     final String range = rule.version().normalizedMavenRange();
     final String numericVersion =
         active.version().stream().map(String::valueOf).collect(Collectors.joining("."));
-    final String image = System.getProperty("java.home");
+    final String image = input.path().toString();
     final boolean supported =
         "(,)".equals(range)
             || (active.pre().isEmpty() && NUMERIC_RUNTIME_RANGE.matcher(range).matches());
@@ -593,7 +682,17 @@ final class MavenForbiddenCodeAssessment {
               "Runtime version scope cannot be evaluated against this runtime identity"));
     }
     if (!MavenVersionRangeMatcher.includes(range, numericVersion)) {
-      return inapplicable(rule, component);
+      return assessment(
+          rule,
+          component,
+          ForbiddenCodeAssessment.VersionApplicability.NOT_APPLICABLE,
+          new Observation(
+              Status.NOT_APPLICABLE,
+              VERSION,
+              image,
+              List.of(),
+              false,
+              "Concrete component version is outside the configured range"));
     }
     return assessment(
         rule,
@@ -666,7 +765,8 @@ final class MavenForbiddenCodeAssessment {
       ProductionEvidence production,
       List<ArtifactSnapshot> artifacts,
       Set<ArtifactCoordinate> dropped,
-      MavenBanPlan banPlan) {}
+      MavenBanPlan banPlan,
+      MavenRuntimePlatforms runtimePlatforms) {}
 
   private record ProductionEvidence(
       Optional<BytecodeReferenceScan> bytecodeScan, File configured, boolean complete) {

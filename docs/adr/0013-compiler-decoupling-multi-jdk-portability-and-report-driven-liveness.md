@@ -107,3 +107,7 @@ irrelevant evidence cannot activate the closed-world policy. Evidence kind and n
 classes participate in policy/cache identity so conservative and workload-scoped results cannot
 be interchanged. This mode is a user-supplied workload boundary; it does not claim that every JVM
 will avoid resolving types from unexecuted bytecode bodies.
+
+## 6. Dated Amendment: 2026-11-19 Selected Target Runtime
+
+[ADR-0015 slice 2](0015-forbidden-code-policy-and-evidence-bounded-cve-assessment.md#slice-2-shared-target-runtime-platform-for-analysis-and-trimming) requires an explicit list of installed or archived modular runtime inputs as the shared platforms for analysis, link closure, trimming and runtime-code assessment. It does not implicitly select the compiler target, toolchain or Maven runtime. This amends the active-Maven-runtime-only class-table choice in §2.1 when that slice is implemented; the existing code still uses the active runtime until then. Runtime views, cache identities and report provenance must identify every selected platform, and unavailable required linkage evidence cannot justify an unsafe trimmed result. The portability and standard-API constraints in this ADR remain in force.

@@ -53,6 +53,11 @@ final class TierAnalysisResultBuilder {
         final TierInventoryReader.MultiReleaseCandidateInfo mrInfo =
             inventory.multiReleaseCandidates().get(entry.getKey());
         upperClasses.put(entry.getKey().coordinate(), mrInfo.versionedClasses());
+        if (operation.request().runtimePlatforms() != null) {
+          final ArtifactCoordinate coordinate = entry.getKey().coordinate();
+          analyses.computeIfPresent(
+              coordinate, (key, analysis) -> outputBaseline(analysis, mrInfo.targetClasses()));
+        }
         if (mrInfo.sourceData() != null) {
           multiReleaseSources.put(mrInfo.sourceData().sourcePath(), mrInfo.sourceData());
         }
@@ -72,6 +77,19 @@ final class TierAnalysisResultBuilder {
         .withPassThroughIdentities(passThroughIdentities)
         .withLiveProgramClasses(closure.liveProgramClasses())
         .withForcedUnchangedCoordinates(operation.forcedUnchanged());
+  }
+
+  private static DependencyJarTrimmer.TrimAnalysis outputBaseline(
+      final DependencyJarTrimmer.TrimAnalysis analysis, final Set<String> baseline) {
+    return new DependencyJarTrimmer.TrimAnalysis(
+        baseline.size(), inBaseline(analysis.retainedClasses(), baseline),
+        inBaseline(analysis.roots(), baseline), analysis.reachableLibraryClasses());
+  }
+
+  private static Set<String> inBaseline(final Set<String> classes, final Set<String> baseline) {
+    return classes.stream()
+        .filter(name -> baseline.contains(name.replace('/', '.')))
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
   private static Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> mutableAnalyses(

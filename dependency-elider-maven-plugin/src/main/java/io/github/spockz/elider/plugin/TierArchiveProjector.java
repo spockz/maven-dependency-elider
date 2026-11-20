@@ -30,7 +30,12 @@ final class TierArchiveProjector {
       final Inventory inventory, final JdkClassTablePlan classTables) throws IOException {
     final List<TierContext> contexts = new ArrayList<>();
     for (final int tier : inventory.tiers()) {
-      contexts.add(projectTier(inventory, classTables.byRelease().get(tier), tier));
+      final List<ClassPool> tables = classTables.byRelease().get(tier);
+      final TierContext view = projectTier(inventory, tables.getFirst(), tier);
+      contexts.add(view);
+      for (final ClassPool table : tables.subList(1, tables.size())) {
+        contexts.add(view.withPlatform(table));
+      }
     }
     return List.copyOf(contexts);
   }
@@ -154,6 +159,19 @@ final class TierArchiveProjector {
           candidates,
           programs,
           jdkClassTable);
+    }
+
+    /* package */ TierContext withPlatform(final ClassPool table) {
+      return new TierContext(
+          tierRelease,
+          targetCompilerRelease,
+          multiReleaseCandidates,
+          paths,
+          classes,
+          ownersByClass,
+          candidatePrepared,
+          programPrepared,
+          table);
     }
 
     /* package */ int release() {

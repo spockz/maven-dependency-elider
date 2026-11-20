@@ -77,6 +77,10 @@ abstract class AbstractElisionMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.trimRoots")
   protected List<String> trimRoots;
 
+  /** Installed modular runtime homes or ZIP and tar.gz archives to inspect. */
+  @Parameter(property = "elide.runtimeInputs")
+  protected List<String> runtimeInputs;
+
   /** Retained artifact coordinates to analyze as unchanged pass-through libraries. */
   @Parameter(property = "elide.trimSkipArtifacts")
   protected List<String> trimSkipArtifacts;
@@ -213,6 +217,14 @@ abstract class AbstractElisionMojo extends PluginCacheMojoSupport {
         mrjarStrategy,
         new DuplicateClassPolicy(retainDuplicateClassOwners, trimDuplicateClassOwners),
         trimPassThroughOnUnresolved);
+  }
+
+  /** Inspects runtime paths resolved against the current project. */
+  @SuppressWarnings("PMD.LawOfDemeter")
+  protected final MavenRuntimePlatforms configuredRuntimePlatforms() {
+    final File base = project == null ? null : project.getBasedir();
+    return MavenRuntimePlatforms.inspect(
+        base == null ? null : base.toPath(), runtimeInputs, session);
   }
 
   /** Returns whether execution runs in a trusted process-classes context. */

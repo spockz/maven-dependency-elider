@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.advisory.VulnerabilityCacheManager.CacheConfig;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -24,11 +25,15 @@ import org.apache.maven.project.MavenProject;
 /** Publishes effective analysis reports, Maven views, and the resolver plan. */
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
+  "PMD.GodClass",
   "PMD.TooManyMethods",
   "PMD.CouplingBetweenObjects"
 })
 // Coordinates independent per-file outputs with the final Maven-view update.
 final class MavenElisionOutputPublisher {
+  /** The advisory file describes one installed runtime. */
+  private static final int SINGLE_RUNTIME = 1;
+
   private MavenElisionOutputPublisher() {
     throw new AssertionError("No instances");
   }
@@ -184,6 +189,7 @@ final class MavenElisionOutputPublisher {
       final MavenVulnerabilityAssessment.Result assessment)
       throws IOException {
     final ElisionAnalysisModel.Analysis analysis = request.analysis();
+    final String formattedModules = moduleAdvice(request, inventory.artifactFiles());
     MavenClassUsageReportWriter.write(
         request.files().classUsage().toPath(),
         analysis.evidence().classUsageReport(),
@@ -210,32 +216,67 @@ final class MavenElisionOutputPublisher {
     for (final Path embeddedSbom : embeddedSboms) {
       MavenSbomWriter.writeEmbeddedSbom(sbom, embeddedSbom);
     }
-    final List<Path> inputs = new ArrayList<>();
-    final List<Path> classPath = new ArrayList<>();
-    if (request.project().getBuild() != null
-        && request.project().getBuild().getOutputDirectory() != null) {
-      inputs.add(Path.of(request.project().getBuild().getOutputDirectory()));
-    }
-    SpringAotAssetPaths.resolveMainClasses(request.project()).ifPresent(inputs::add);
-    for (final ArtifactFileRef ref : inventory.artifactFiles()) {
-      if (ref.filePath().toString().endsWith(".jar")
-          || ref.filePath().toString().endsWith(".class")) {
-        classPath.add(ref.filePath());
-      }
-    }
     final Path advisoryModulesPath =
         MavenGeneratedOutputs.Paths.outputFile(
                 null, request.project(), AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME)
             .toPath();
-    final Set<String> recommendedModules =
-        new AdvisoryJdkModulesAnalyzer()
-            .analyze(
-                inputs, classPath, analysis.trimResult().executionEnvironment().targetRelease());
-    final String formattedModules = AdvisoryJdkModulesAnalyzer.formatModuleList(recommendedModules);
     MavenGeneratedOutputs.writeAtomically(
         advisoryModulesPath,
         temporary -> java.nio.file.Files.writeString(temporary, formattedModules));
     MavenElisionReportWriter.write(summary, reportSnapshot);
+  }
+
+  private static String moduleAdvice(final Request request, final List<ArtifactFileRef> artifacts) {
+    final TrimExecutionEnvironment environment =
+        request.analysis().trimResult().executionEnvironment();
+    final List<MavenRuntimeCoverage.Image> runtimes = environment.runtimeCoverage().inputs();
+    if (runtimes.size() == SINGLE_RUNTIME) {
+      final MavenRuntimeCoverage.Image image = runtimes.getFirst();
+      final Path selected = Path.of(image.path());
+      if (image.problem() == null
+          && image.linkageProblem() == null
+          && java.nio.file.Files.isDirectory(selected)) {
+        try {
+          return analyzeModules(request.project(), artifacts, image.feature(), selected);
+        } catch (final IOException failure) {
+          return unavailableModuleAdvice(request, failure.getMessage());
+        }
+      }
+    }
+    return unavailableModuleAdvice(request, null);
+  }
+
+  private static String analyzeModules(
+      final MavenProject project,
+      final List<ArtifactFileRef> artifacts,
+      final int release,
+      final Path selected)
+      throws IOException {
+    final List<Path> inputs = new ArrayList<>();
+    if (project.getBuild() != null && project.getBuild().getOutputDirectory() != null) {
+      inputs.add(Path.of(project.getBuild().getOutputDirectory()));
+    }
+    SpringAotAssetPaths.resolveMainClasses(project).ifPresent(inputs::add);
+    final List<Path> classPath =
+        artifacts.stream()
+            .map(ArtifactFileRef::filePath)
+            .filter(path -> path.toString().endsWith(".jar") || path.toString().endsWith(".class"))
+            .toList();
+    final AdvisoryJdkModulesAnalyzer analyzer = new AdvisoryJdkModulesAnalyzer();
+    final Set<String> modules =
+        java.nio.file.Files.isSameFile(selected, Path.of(System.getProperty("java.home")))
+            ? analyzer.analyzeForRuntime(inputs, classPath, release, null)
+            : JdkPlatformContext.withInstalledRuntimeForTool(
+                selected, home -> analyzer.analyzeForRuntime(inputs, classPath, release, home));
+    return AdvisoryJdkModulesAnalyzer.formatModuleList(modules);
+  }
+
+  private static String unavailableModuleAdvice(final Request request, final String problem) {
+    final String unavailable = "JDK module advice is unavailable for the selected runtime inputs.";
+    if (request.log().isWarnEnabled()) {
+      request.log().warn(problem == null ? unavailable : unavailable + " " + problem);
+    }
+    return "# " + unavailable + "\n";
   }
 
   private static boolean hasVex(final MavenVulnerabilityAssessment.Result assessment) {

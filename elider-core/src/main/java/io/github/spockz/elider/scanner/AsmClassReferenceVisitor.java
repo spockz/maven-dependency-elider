@@ -54,6 +54,9 @@ public final class AsmClassReferenceVisitor extends ClassVisitor {
   /** Sink receiving internal class names and edge kinds. */
   private final BiConsumer<String, ReferenceKind> consumer;
 
+  /** Optional sink for the direct superclass and interfaces of a class. */
+  private final BiConsumer<String, String> supertypeConsumer;
+
   /** Reusable stateless method visitor. */
   private final MethodVisitor methodVisitor = new MethodReferenceVisitor();
 
@@ -83,10 +86,19 @@ public final class AsmClassReferenceVisitor extends ClassVisitor {
       final String sourceClass,
       final boolean includeMethodBodies,
       final BiConsumer<String, ReferenceKind> consumer) {
+    this(sourceClass, includeMethodBodies, consumer, null);
+  }
+
+  /* package */ AsmClassReferenceVisitor(
+      final String sourceClass,
+      final boolean includeMethodBodies,
+      final BiConsumer<String, ReferenceKind> consumer,
+      final BiConsumer<String, String> supertypeConsumer) {
     super(Opcodes.ASM9);
     this.sourceClass = Objects.requireNonNull(sourceClass, "sourceClass");
     this.includeMethodBodies = includeMethodBodies;
     this.consumer = Objects.requireNonNull(consumer, "consumer");
+    this.supertypeConsumer = supertypeConsumer;
   }
 
   @Override
@@ -97,13 +109,20 @@ public final class AsmClassReferenceVisitor extends ClassVisitor {
       final String signature,
       final String superName,
       final String[] interfaces) {
-    addInternalName(superName, ReferenceKind.STRUCTURAL);
+    addSupertype(name, superName);
     if (interfaces != null) {
       for (final String interfaceName : interfaces) {
-        addInternalName(interfaceName, ReferenceKind.STRUCTURAL);
+        addSupertype(name, interfaceName);
       }
     }
     addSignature(signature, ReferenceKind.STRUCTURAL);
+  }
+
+  private void addSupertype(final String name, final String supertype) {
+    addInternalName(supertype, ReferenceKind.STRUCTURAL);
+    if (supertype != null && supertypeConsumer != null) {
+      supertypeConsumer.accept(name, supertype);
+    }
   }
 
   @Override

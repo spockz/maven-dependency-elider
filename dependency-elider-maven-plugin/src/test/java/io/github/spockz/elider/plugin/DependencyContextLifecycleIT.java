@@ -3404,6 +3404,7 @@ final class DependencyContextLifecycleIT {
     Files.createDirectories(isolatedVulnerabilityCache);
     command.add("-Duser.home=" + isolatedHome);
     command.add("-Delide.cveCacheDirectory=" + isolatedVulnerabilityCache);
+    command.add("-Delide.runtimeInputs=" + System.getProperty("java.home"));
     // These probes do not verify vulnerability mappings.
     // Remote feed refresh is outside their test boundary.
     command.add("-Delide.osvSnapshotUri=");

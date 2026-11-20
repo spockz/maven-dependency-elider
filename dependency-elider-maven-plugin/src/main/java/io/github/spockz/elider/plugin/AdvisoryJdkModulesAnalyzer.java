@@ -40,13 +40,52 @@ final class AdvisoryJdkModulesAnalyzer {
     if (jdepsProvider.isEmpty()) {
       return Set.of("java.base");
     }
+    return analyze(inputPaths, classPathEntries, targetRelease, jdepsProvider.get());
+  }
+
+  /* default */ Set<String> analyze(
+      final List<Path> inputPaths,
+      final List<Path> classPathEntries,
+      final int targetRelease,
+      final ToolProvider jdeps)
+      throws IOException {
+    return analyzeWithTool(inputPaths, classPathEntries, targetRelease, jdeps, null);
+  }
+
+  /** Uses the selected installed image and reports any tool failure to the advisory caller. */
+  /* package */ Set<String> analyzeForRuntime(
+      final List<Path> inputs, final List<Path> classPath, final int release, final Path runtime)
+      throws IOException {
+    final ToolProvider tool =
+        ToolProvider.findFirst("jdeps").orElseThrow(() -> new IOException("jdeps is unavailable"));
+    return analyzeWithTool(inputs, classPath, release, tool, runtime);
+  }
+
+  private Set<String> analyzeWithTool(
+      final List<Path> inputPaths,
+      final List<Path> classPathEntries,
+      final int targetRelease,
+      final ToolProvider jdeps,
+      final Path runtime)
+      throws IOException {
+    final List<String> existingInputs = new ArrayList<>();
+    for (final Path input : inputPaths) {
+      if (Files.exists(input)) {
+        existingInputs.add(input.toAbsolutePath().normalize().toString());
+      }
+    }
+    if (existingInputs.isEmpty()) {
+      return Set.of("java.base");
+    }
 
     final List<String> args = new ArrayList<>();
     args.add("--print-module-deps");
     args.add("--ignore-missing-deps");
-    if (targetRelease >= FIRST_MODULAR_RELEASE) {
-      args.add("--multi-release");
-      args.add(String.valueOf(targetRelease));
+    args.add("--multi-release");
+    args.add(targetRelease >= FIRST_MODULAR_RELEASE ? String.valueOf(targetRelease) : "base");
+    if (runtime != null) {
+      args.add("--system");
+      args.add(runtime.toString());
     }
     if (!classPathEntries.isEmpty()) {
       final StringBuilder classpath = new StringBuilder();
@@ -59,18 +98,20 @@ final class AdvisoryJdkModulesAnalyzer {
       args.add("--class-path");
       args.add(classpath.toString());
     }
-
-    for (final Path input : inputPaths) {
-      if (Files.exists(input)) {
-        args.add(input.toAbsolutePath().normalize().toString());
-      }
-    }
+    args.addAll(existingInputs);
 
     final StringWriter out = new StringWriter();
     final StringWriter err = new StringWriter();
-    jdepsProvider
-        .get()
-        .run(new PrintWriter(out), new PrintWriter(err), args.toArray(String[]::new));
+    final int exitCode = run(jdeps, args, out, err);
+    if (exitCode != 0) {
+      final String errorText = err.toString().trim();
+      final String outputText = out.toString().trim();
+      final String details = errorText.isEmpty() ? outputText : errorText;
+      throw new IOException(
+          details.isEmpty()
+              ? "jdeps failed with exit code " + exitCode
+              : "jdeps failed with exit code " + exitCode + ": " + details);
+    }
 
     final Set<String> modules = new TreeSet<>();
     final String result = out.toString().trim();
@@ -88,6 +129,21 @@ final class AdvisoryJdkModulesAnalyzer {
       modules.add("java.base");
     }
     return modules;
+  }
+
+  @SuppressWarnings(
+      "PMD.AvoidCatchingGenericException") // Tool adapters can throw unchecked failures.
+  private static int run(
+      final ToolProvider tool,
+      final List<String> args,
+      final StringWriter out,
+      final StringWriter err)
+      throws IOException {
+    try {
+      return tool.run(new PrintWriter(out), new PrintWriter(err), args.toArray(String[]::new));
+    } catch (final RuntimeException failure) {
+      throw new IOException("jdeps failed: " + failure.getMessage(), failure);
+    }
   }
 
   static String formatModuleList(final Set<String> modules) {

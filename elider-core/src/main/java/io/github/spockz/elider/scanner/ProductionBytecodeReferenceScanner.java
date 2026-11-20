@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
@@ -44,20 +45,31 @@ public final class ProductionBytecodeReferenceScanner {
   /** Scans every class entry in a JAR, including each multi-release tier. */
   // Malformed class bytes must fail this input scan as an IOException.
   public BytecodeReferenceScan scanArchive(final Path archivePath) throws IOException {
-    return scanArchive(archivePath, className -> true);
+    return scanArchive(archivePath, className -> true, null);
   }
 
   /** Scans retained classes across all JAR tiers, including MRJAR entries. */
   public BytecodeReferenceScan scanArchive(
       final Path archivePath, final Set<String> retainedInternalNames) throws IOException {
+    return scanArchive(archivePath, retainedInternalNames, null);
+  }
+
+  /** Also reports each selected class's direct supertypes as internal names. */
+  public BytecodeReferenceScan scanArchive(
+      final Path archivePath,
+      final Set<String> retainedInternalNames,
+      final BiConsumer<String, String> supertypes)
+      throws IOException {
     if (retainedInternalNames == null) {
       throw new IllegalArgumentException("retainedInternalNames must not be null");
     }
-    return scanArchive(archivePath, retainedInternalNames::contains);
+    return scanArchive(archivePath, retainedInternalNames::contains, supertypes);
   }
 
   private BytecodeReferenceScan scanArchive(
-      final Path archivePath, final java.util.function.Predicate<String> selectedClass)
+      final Path archivePath,
+      final java.util.function.Predicate<String> selectedClass,
+      final BiConsumer<String, String> supertypes)
       throws IOException {
     if (archivePath == null || !Files.isRegularFile(archivePath)) {
       throw new IOException("Bytecode archive is missing or not a regular file: " + archivePath);
@@ -67,18 +79,20 @@ public final class ProductionBytecodeReferenceScanner {
     int count = 0;
     try (JarFile archive = new JarFile(scope.toFile())) {
       for (final JarEntry entry : archive.stream().toList()) {
-        count += scanArchiveEntry(archive, scope, entry, selectedClass, references);
+        count += scanArchiveEntry(archive, scope, entry, selectedClass, references, supertypes);
       }
     }
     return new BytecodeReferenceScan(scope, references, count, true);
   }
 
+  @SuppressWarnings("PMD.AvoidCatchingGenericException")
   private static int scanArchiveEntry(
       final JarFile archive,
       final Path scope,
       final JarEntry entry,
       final java.util.function.Predicate<String> selectedClass,
-      final Set<String> references)
+      final Set<String> references,
+      final BiConsumer<String, String> supertypes)
       throws IOException {
     if (entry.isDirectory() || !entry.getName().endsWith(CLASS_SUFFIX)) {
       return 0;
@@ -89,9 +103,13 @@ public final class ProductionBytecodeReferenceScanner {
     if (!selectedClass.test(internalName)) {
       return 0;
     }
+    final Path classPath = scope.resolve(entry.getName());
     try (java.io.InputStream input = archive.getInputStream(entry)) {
-      return scanClassStream(scope.resolve(entry.getName()), input, references);
+      scanReader(classPath, new ClassReader(input), references, supertypes);
+    } catch (final RuntimeException exception) {
+      throw new IOException("Could not scan production class file: " + classPath, exception);
     }
+    return 1;
   }
 
   // Each malformed version-path form is rejected before class selection.
@@ -117,19 +135,7 @@ public final class ProductionBytecodeReferenceScanner {
   static int scanClassFile(final Path path, final byte[] content, final Set<String> references)
       throws IOException {
     try {
-      scanReader(path, new ClassReader(content), references);
-    } catch (final RuntimeException exception) {
-      throw new IOException("Could not scan production class file: " + path, exception);
-    }
-    return 1;
-  }
-
-  @SuppressWarnings("PMD.AvoidCatchingGenericException")
-  private static int scanClassStream(
-      final Path path, final java.io.InputStream input, final Set<String> references)
-      throws IOException {
-    try {
-      scanReader(path, new ClassReader(input), references);
+      scanReader(path, new ClassReader(content), references, null);
     } catch (final RuntimeException exception) {
       throw new IOException("Could not scan production class file: " + path, exception);
     }
@@ -137,12 +143,16 @@ public final class ProductionBytecodeReferenceScanner {
   }
 
   private static void scanReader(
-      final Path path, final ClassReader reader, final Set<String> references) {
+      final Path path,
+      final ClassReader reader,
+      final Set<String> references,
+      final BiConsumer<String, String> supertypes) {
     reader.accept(
         new AsmClassReferenceVisitor(
             path.toString(),
             true,
-            (internalName, unusedKind) -> references.add(TraceData.normalizeToDot(internalName))),
+            (internalName, unusedKind) -> references.add(TraceData.normalizeToDot(internalName)),
+            supertypes),
         0);
   }
 }

@@ -97,10 +97,15 @@ public final class ForbiddenCodeExampleChecks {
               && !runtime.path("componentIdentity").asText().isBlank(),
           "Runtime identity must describe the inspected image: " + runtime);
     } else {
+      final JsonNode unavailable =
+          snapshot.path("executionEnvironment").path("runtimeCoverage").path("inputs").get(0);
       require(
           runtime.path("componentVersion").isNull()
               && runtime.path("componentIdentity").isNull()
-              && runtime.path("reason").asText().contains("No inspected Java runtime"),
+              && unavailable != null
+              && unavailable.path("feature").isNull()
+              && unavailable.path("problem").asText().contains("Runtime input does not exist")
+              && runtime.path("reason").asText().contains(unavailable.path("problem").asText()),
           "Runtime identity must be unknown when the image is unavailable: " + runtime);
     }
     if (directCall) {

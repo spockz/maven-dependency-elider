@@ -33,7 +33,8 @@ record AnalyzePrediction(
     MavenElisionPolicyIdentity policy,
     TrimExecutionEnvironment executionEnvironment,
     List<String> rawDroppedCoordinates,
-    MediatedGraphReport mediatedGraph) {
+    MediatedGraphReport mediatedGraph,
+    MavenRuntimePlatforms runtimePlatforms) {
   /** Report marker for root module descriptor removal. */
   private static final String CLASSPATH_ONLY_STATUS = "classpath-only";
 
@@ -95,7 +96,8 @@ record AnalyzePrediction(
         new MavenElisionPolicyIdentity(List.of(), List.of(), operationFingerprint),
         new TrimExecutionEnvironment(Runtime.version().feature(), Runtime.version().feature()),
         List.of(),
-        MediatedGraphReport.unavailable("No graph captured"));
+        MediatedGraphReport.unavailable("No graph captured"),
+        null);
   }
 
   AnalyzePrediction {
@@ -146,8 +148,8 @@ record AnalyzePrediction(
             .prepared()
             .policyOptions()
             .withOperationFingerprint(analysis.operationFingerprint()),
-        new TrimExecutionEnvironment(
-            analysis.trimAnalysis().targetRelease(), analysis.trimAnalysis().runtimeRelease()),
+        MavenDependencyTrimmer.reportedEnvironment(
+            trimRequest, analysis.trimAnalysis().analyzedTiers()),
         analysis.prepared().traceDecision().elidedArtifacts().stream()
             .filter(c -> !analysis.banPlan().forcedAbsentAfterResolution().contains(c))
             .map(Object::toString)
@@ -164,7 +166,8 @@ record AnalyzePrediction(
                 + ":"
                 + analysis.prepared().project().getArtifactId()
                 + ":"
-                + analysis.prepared().project().getVersion()));
+                + analysis.prepared().project().getVersion()),
+        analysis.prepared().options().runtimePlatforms());
   }
 
   private static List<PlannedTrim> plannedTrims(

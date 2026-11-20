@@ -65,6 +65,7 @@ final class MavenElisionReportRenderer {
             + snapshot.generatedAt());
     lines.add("Analysis target JDK release: " + snapshot.executionEnvironment().targetRelease());
     lines.add("Elider runtime JDK release: " + snapshot.executionEnvironment().runtimeRelease());
+    renderRuntimeCoverage(snapshot.executionEnvironment().runtimeCoverage(), lines);
     lines.add(
         "Policy: retained="
             + snapshot.policy().retainedArtifacts()
@@ -146,7 +147,31 @@ final class MavenElisionReportRenderer {
     return List.copyOf(lines);
   }
 
-  private static void renderForbiddenCode(
+  private static void renderRuntimeCoverage(
+      final MavenRuntimeCoverage coverage, final List<String> lines) {
+    lines.add("Analyzed runtime releases: " + coverage.analyzedReleases());
+    for (final MavenRuntimeCoverage.Image image : coverage.inputs()) {
+      lines.add(
+          "Runtime input "
+              + image.path()
+              + ": "
+              + (image.problem() == null
+                  ? "Java "
+                      + image.version()
+                      + " ("
+                      + java.util.Objects.toString(image.vendor(), "vendor unknown")
+                      + ")"
+                  : image.problem()));
+      if (image.linkageProblem() != null) {
+        lines.add("    Runtime linkage unavailable: " + image.linkageProblem());
+      }
+    }
+    if (coverage.compilerTargetWarning() != null) {
+      lines.add("WARNING: " + coverage.compilerTargetWarning());
+    }
+  }
+
+  /* package */ static void renderForbiddenCode(
       final List<ForbiddenCodeAssessment> assessments, final List<String> lines) {
     assessments.stream()
         .map(ForbiddenCodeAssessment::status)

@@ -49,7 +49,7 @@ Elider hashes dependency JARs and runtime system-module descriptors/classes by c
 
 ### What happens if a dependency contains multi-release implementation classes?
 
-With `elide.trimJars=true` and default `elide.mrjarStrategy=vertical-shading`, Elider elevates classes for the effective compiler target release to the JAR root, preserves higher-tier entries unchanged, strips versioned `module-info.class`, and filters `META-INF/services/` for removed providers. Set `-Delide.mrjarStrategy=pass-through` to keep MRJARs byte-identical (higher-tier links above the Maven runtime are not included in sibling closure).
+With `elide.trimJars=true` and default `elide.mrjarStrategy=vertical-shading`, Elider elevates classes for the effective compiler target release to the JAR root, preserves higher-tier entries unchanged, strips versioned `module-info.class`, and filters `META-INF/services/` for removed providers. Set `-Delide.mrjarStrategy=pass-through` to keep MRJARs byte-identical. Sibling closure covers the views of the selected runtime images.
 
 ### What happens to reports and outputs if publication fails?
 
@@ -57,7 +57,12 @@ Any failure before publication commits rolls back the previous reports, generate
 
 ### What if my application runs on a different JDK than Maven?
 
-Elider selects the target release from Maven's effective compiler configuration (`release`, then `target`; `source` alone is ignored), falling back to the active Maven runtime JDK if unset. Because the JDK class table reflects the Maven runtime rather than historical APIs, run the build on your target deployment JDK to verify higher-tier MRJAR links.
+Supply the installed runtime home or its ZIP or `tar.gz` archive in
+`elide.runtimeInputs`. You can list several images. An explicit compiler target
+outside the inspected releases triggers a warning in both the original report and
+replay. A missing required platform prevents unsafe pruning. Images are analysis
+inputs outside application packages and SBOMs.
+[Runtime inputs and archive preparation](../dependency-elider-maven-plugin/src/site/markdown/usage.md#runtime-inputs)
 
 ### What if production output is not ready at `process-classes`?
 
@@ -119,7 +124,7 @@ Automatic code paths normalize into sets and affected ranges combine by union (p
 
 ### How does the report distinguish the analysis target from the Maven runtime?
 
-`executionEnvironment.targetRelease` records the effective compiler target (`release`, then `target`, then Maven runtime JDK if unset; `testCompile` is ignored), while `executionEnvironment.runtimeRelease` records the JDK running Maven. `report` replays both saved values.
+`executionEnvironment.targetRelease` records the effective compiler target (`release`, then `target`, then the Maven JVM's feature release if unset). `executionEnvironment.runtimeRelease` records the JDK running Maven. `executionEnvironment.runtimeCoverage` records the selected images, their inspection outcomes and the releases analyzed. `report` replays the saved coverage and any warning about an uncovered compiler target.
 
 ### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
 

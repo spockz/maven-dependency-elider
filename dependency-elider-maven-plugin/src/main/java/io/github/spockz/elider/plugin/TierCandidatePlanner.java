@@ -46,12 +46,19 @@ final class TierCandidatePlanner {
       final Set<Path> outputPaths,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates)
       throws IOException {
-    final Set<String> targetClasses = TierAnalysisViews.classesInTargetTier(snapshot, projections);
+    final MultiReleaseCandidateInfo mrInfo = multiRelease.get(snapshot);
+    final Set<String> targetClasses;
+    if (mrInfo != null) {
+      targetClasses = mrInfo.targetClasses();
+    } else if (operation.request().runtimePlatforms() == null) {
+      targetClasses = TierAnalysisViews.classesInTargetTier(snapshot, projections);
+    } else {
+      targetClasses = projections.getFirst().classesOf(snapshot);
+    }
     final Path output = TrimPaths.outputPath(operation.request().project(), snapshot.coordinate());
     if (!outputPaths.add(output)) {
       throw new IOException("Distinct tiered candidates share output path: " + output);
     }
-    final MultiReleaseCandidateInfo mrInfo = multiRelease.get(snapshot);
     final Set<String> roots = new TreeSet<>(candidateRoots.get(snapshot));
     candidates.put(snapshot, new TierCandidate(targetClasses, roots, mrInfo != null));
   }

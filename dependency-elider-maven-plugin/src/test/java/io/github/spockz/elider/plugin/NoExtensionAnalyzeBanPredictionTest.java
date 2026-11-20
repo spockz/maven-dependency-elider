@@ -251,7 +251,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
   @Test
   void analyzeMojoDuplicateOwnerParameterPersistsAndLogsEffectiveFinding() throws Exception {
     final Fixture fixture = duplicateProviderFixture();
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     final Path report = temporaryDirectory.resolve("analyze-duplicate-owners.json");
     final RecordingMavenLog log = new RecordingMavenLog();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", fixture.project());
@@ -272,7 +272,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         new ObjectMapper().readTree(report.toFile());
     final com.fasterxml.jackson.databind.JsonNode duplicate =
         json.path("toleratedDuplicates").get(0);
-    final AnalyzeMojo trimMojo = new AnalyzeMojo();
+    final AnalyzeMojo trimMojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     final Path trimReport = temporaryDirectory.resolve("analyze-duplicate-trim-owners.json");
     final RecordingMavenLog trimLog = new RecordingMavenLog();
     AnalyzeMojoTestFieldSupport.set(trimMojo, "project", fixture.project());
@@ -940,7 +940,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
   private ElideMojo elideMojo(final Fixture fixture, final boolean trim)
       throws ReflectiveOperationException {
     fixture.session().getRequest().setOffline(true);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = ExplicitRuntimeMojoTestSupport.newElideMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", fixture.project());
     set(mojo, "session", fixture.session());

@@ -6,11 +6,14 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.DefaultDependencyResolutionRequest;
@@ -224,14 +227,17 @@ record MavenAnalysisResolutionContext(
     MavenArtifactPathValidation.validateIdentityPaths(resolved);
     MavenArtifactPathValidation.validateIdentityPaths(direct);
     final ArtifactViews views = new ArtifactViews(resolved, directPresent, direct);
+    final Map<Path, String> contentDigests = new ConcurrentHashMap<>();
     return new MavenAnalysisResolutionContext(
         project,
         liveProject,
         provenance,
         environment,
         views,
-        ResolvedArtifactInventoryFingerprint.fingerprint(resolved),
-        directPresent ? ResolvedArtifactInventoryFingerprint.fingerprint(direct) : "missing",
+        ResolvedArtifactInventoryFingerprint.fingerprint(resolved, contentDigests),
+        directPresent
+            ? ResolvedArtifactInventoryFingerprint.fingerprint(direct, contentDigests)
+            : "missing",
         pair);
   }
 

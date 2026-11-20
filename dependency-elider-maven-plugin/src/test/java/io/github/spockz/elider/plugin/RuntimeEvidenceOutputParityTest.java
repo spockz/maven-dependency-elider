@@ -304,7 +304,7 @@ final class RuntimeEvidenceOutputParityTest extends MavenDependencyTrimmerInMemo
           IOException,
           MojoExecutionException,
           MojoFailureException {
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(
         mojo, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession session = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());
@@ -341,7 +341,7 @@ final class RuntimeEvidenceOutputParityTest extends MavenDependencyTrimmerInMemo
           IOException,
           MojoExecutionException,
           MojoFailureException {
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = ExplicitRuntimeMojoTestSupport.newElideMojo();
     AnalyzeMojoTestFieldSupport.set(
         mojo, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession session = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());

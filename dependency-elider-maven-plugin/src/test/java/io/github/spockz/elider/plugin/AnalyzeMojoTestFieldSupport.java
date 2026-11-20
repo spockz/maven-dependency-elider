@@ -84,7 +84,8 @@ final class AnalyzeMojoTestFieldSupport {
                       .map(Object::toString)
                       .sorted()
                       .toList(),
-                  graph);
+                  graph,
+                  options.runtimePlatforms());
             });
   }
 

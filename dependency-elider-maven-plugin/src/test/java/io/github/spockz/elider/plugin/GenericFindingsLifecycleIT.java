@@ -880,6 +880,7 @@ final class GenericFindingsLifecycleIT {
                 "-s",
                 settings.toString(),
                 "-Dmaven.repo.local=" + localRepository,
+                "-Delide.runtimeInputs=" + System.getProperty("java.home"),
                 "-Delide.cveCacheDirectory=" + cache,
                 "-Delide.osvSnapshotUri=",
                 "-Delide.cveListGitUri=",

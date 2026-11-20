@@ -203,6 +203,12 @@ public final class TrimAnalysisSession {
     archives.clear();
   }
 
+  /** Reads direct superclass and interface names from a prepared archive snapshot. */
+  public Set<String> directSupertypes(final Path archivePath, final String internalName)
+      throws IOException {
+    return archive(archivePath, false).directSupertypes(internalName);
+  }
+
   private ArchiveSnapshot archive(final Path path, final boolean candidate) throws IOException {
     return archives.read(path, candidate);
   }

@@ -107,11 +107,22 @@ final class MavenElideExecution {
   private static void executeAnalysis(final MavenElideExecutionConfiguration configuration)
       throws IOException, MojoFailureException {
     final MavenElisionService service = new MavenElisionService();
-    if (BanishedDependencyPolicy.normalize(configuration.lifecycle().banishedDependencies())
-        .isEmpty()) {
-      executeUnbannedAnalysis(configuration, service);
-    } else {
-      executeBannedAnalysis(configuration, service);
+    try {
+      if (BanishedDependencyPolicy.normalize(configuration.lifecycle().banishedDependencies())
+          .isEmpty()) {
+        executeUnbannedAnalysis(configuration, service);
+      } else {
+        executeBannedAnalysis(configuration, service);
+      }
+    } catch (final ElisionReachabilityEngine.PlatformLinkageUnavailable unavailable) {
+      final MavenElideExecutionConfiguration.Publication publication = configuration.publication();
+      MavenForbiddenCodeAssessment.reportBlockedLinkage(
+          unavailable,
+          publication.vulnerabilityMappings(),
+          publication.failOnForbiddenCode(),
+          ForbiddenCodeAssessment.Mode.OBSERVED,
+          publication.log());
+      throw unavailable;
     }
   }
 

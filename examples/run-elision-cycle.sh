@@ -183,6 +183,7 @@ MANIFEST
     local fixture=$1
     if [[ $fixture == example-forbidden-code-app ]]; then
       bash "$repo_root/examples/verify-forbidden-code.sh" "$test_dir" "$maven" "${maven_options_without_threads[@]}"
+      bash "$repo_root/examples/verify-runtime-preparation.sh" "$test_dir" "$maven" "${maven_options_without_threads[@]}"
       return
     fi
     fixture_dir="$repo_root/examples/$fixture"
@@ -370,6 +371,8 @@ MANIFEST
     fi
     if [[ $fixture == example-mrjar-app ]]; then
       "$jar" --validate --file "$archive_file"
+      grep -Fq 'WARNING: Compiler target Java 11 is not covered by supplied runtime releases' \
+        "$report_output"
     fi
     verify_archive "$fixture" "$entries" "$fixture_dir"
     if [[ $fixture == example-spring-boot-app ]]; then
@@ -382,11 +385,6 @@ MANIFEST
       timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" --class-path "$fixture_dir/target/classes:$archive_file" \
         io.github.spockz.example.mrjar.MultiReleaseApplication >"$final_output"
-      timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
-        "$java" -Djdk.util.jar.version=11 \
-        --class-path "$fixture_dir/target/classes:$archive_file" \
-        io.github.spockz.example.mrjar.MultiReleaseApplication >"$test_dir/$fixture-final-target.out"
-      test "$(<"$test_dir/$fixture-final-target.out")" = "target-tier"
     else
       timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" -jar "$jar_file" >"$final_output"
@@ -1144,25 +1142,27 @@ verify_archive() {
       lacks_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       ;;
     example-mrjar-app)
-      has_entry "$entries" 'io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
-      has_entry "$entries" 'io/github/spockz/example/mrjar/dependency/TargetHelper.class'
+      local baseline='io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
+      local upper='META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UnusedUpperFeature.class'
+      has_entry "$entries" "$baseline"
+      lacks_entry "$entries" 'io/github/spockz/example/mrjar/dependency/TargetHelper.class'
       lacks_entry "$entries" 'io/github/spockz/example/mrjar/dependency/RootHelper.class'
       lacks_entry "$entries" 'io/github/spockz/example/mrjar/dependency/UnusedRootFeature.class'
       lacks_entry "$entries" 'io/github/spockz/example/mrjar/dependency/UnusedTargetFeature.class'
       lacks_pattern "$entries" '^META-INF/versions/11/'
       has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
       has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UpperHelper.class'
-      has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UnusedUpperFeature.class'
-      verify_mrjar_upper_class_bytes "$archive_file"
+      has_entry "$entries" "$upper"
+      verify_mrjar_class_bytes "$archive_file" "$baseline" "META-INF/versions/11/$baseline"
+      verify_mrjar_class_bytes "$archive_file" "$upper" "$upper"
       ;;
   esac
 }
 
-verify_mrjar_upper_class_bytes() {
-  local archive=$1
-  local entry='META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UnusedUpperFeature.class'
-  local extracted="$test_dir/mrjar-upper-entry"
-  local source="$test_dir/mrjar-fixture/classes/$entry"
+verify_mrjar_class_bytes() {
+  local archive=$1 entry=$2 original_entry=$3
+  local extracted="$test_dir/mrjar-verified-entries"
+  local source="$test_dir/mrjar-fixture/classes/$original_entry"
   mkdir -p -- "$extracted"
   (cd -- "$extracted" && "$jar" --extract --file "$archive" "$entry")
   cmp -- "$source" "$extracted/$entry"

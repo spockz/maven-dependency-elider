@@ -141,15 +141,17 @@ verify_case PASS VIOLATION 1.17 false false
 replay dependency-elider-analysis-report.json analyze.log replay-analysis.log
 replay dependency-elider-report.json elide.log replay.log
 
-prepare_case fixed Plain 1.18 -Dmaven.compiler.release=17
+prepare_case fixed Plain 1.18 -Dmaven.compiler.release=17 \
+  "-Delide.runtimeInputs=$evidence/fixed/missing-runtime"
 analyze 0 false true
 apply_policy 0 false true elide.log
 verify_case NOT_APPLICABLE NOT_APPLICABLE 1.18 true true 17
 replay dependency-elider-report.json elide.log replay.log
 
-prepare_case decode-without-runtime Decode 1.18 -Dmaven.compiler.release=17
+prepare_case decode-without-runtime Decode 1.18 -Dmaven.compiler.release=17 \
+  "-Delide.runtimeInputs=$evidence/decode-without-runtime/missing-runtime"
 analyze 1 false true
-grep -F 'No inspected Java runtime image for target release 17' "$case_dir/analyze.log"
+grep -F 'Runtime input does not exist' "$case_dir/analyze.log"
 apply_policy 1 false true rejected.log
 grep -F 'Forbidden code OBSERVED VIOLATION: CVE-2026-114938' "$case_dir/rejected.log"
 test ! -e "$case_dir/build/dependency-elider-report.json"

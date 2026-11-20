@@ -43,7 +43,34 @@ public final class ElisionAnalysisModel {
       TrimOptions trim,
       DynamicRootOptions dynamicRoots,
       AnalysisEnvironment environment,
-      boolean closedWorld) {
+      boolean closedWorld,
+      MavenRuntimePlatforms runtimePlatforms) {
+    @SuppressWarnings("PMD.ExcessiveParameterList")
+    /* package */ AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> retainedArtifacts,
+        final List<String> banishedDependencies,
+        final File productionOutput,
+        final MavenSession session,
+        final CompletenessOptions completeness,
+        final TrimOptions trim,
+        final DynamicRootOptions dynamicRoots,
+        final AnalysisEnvironment environment,
+        final boolean closedWorld) {
+      this(
+          traceFiles,
+          retainedArtifacts,
+          banishedDependencies,
+          productionOutput,
+          session,
+          completeness,
+          trim,
+          dynamicRoots,
+          environment,
+          closedWorld,
+          null);
+    }
+
     /* default */ AnalysisOptions(
         final List<File> traceFiles,
         final List<String> retainedArtifacts,
@@ -133,7 +160,23 @@ public final class ElisionAnalysisModel {
           trim,
           dynamicRoots,
           value,
-          closedWorld);
+          closedWorld,
+          runtimePlatforms);
+    }
+
+    /* package */ AnalysisOptions withRuntimePlatforms(final MavenRuntimePlatforms platforms) {
+      return new AnalysisOptions(
+          traceFiles,
+          retainedArtifacts,
+          banishedDependencies,
+          productionOutput,
+          session,
+          completeness,
+          trim,
+          dynamicRoots,
+          environment,
+          closedWorld,
+          platforms);
     }
   }
 

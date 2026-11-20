@@ -173,7 +173,7 @@ final class AnalyzeMojoProductionOutputTest {
     final Path trace = tempDir.resolve("runtime-trace.lst");
     Files.writeString(trace, "app/Production\n");
     final Path summary = tempDir.resolve("runtime-policy.json");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.set(mojo, TRACE_FILES_FIELD, List.of(trace.toFile()));
@@ -248,6 +248,7 @@ final class AnalyzeMojoProductionOutputTest {
 
     final int foreignTarget = Runtime.version().feature() - 1;
     project.getProperties().setProperty(COMPILER_RELEASE, Integer.toString(foreignTarget));
+    AnalyzeMojoTestFieldSupport.set(mojo, "runtimeInputs", List.of());
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)
         .hasMessageContaining("2 violation");

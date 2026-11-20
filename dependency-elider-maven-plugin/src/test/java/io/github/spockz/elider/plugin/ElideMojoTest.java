@@ -3737,7 +3737,7 @@ final class ElideMojoTest {
   }
 
   private static ElideMojo newMojo() {
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = ExplicitRuntimeMojoTestSupport.newElideMojo();
     final MavenSession session =
         new MavenSession(
             testContainer(),

@@ -58,6 +58,7 @@ type commandResult struct {
 var (
 	snapshotAt                = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: (?:analysis prediction|last successful elide run) at )[^\s]+`)
 	runtimeRelease            = regexp.MustCompile(`(?m)^(\[INFO\] Elider runtime JDK release: )\d+$`)
+	runtimeImageCaption       = regexp.MustCompile(`^\[INFO\] Runtime input .+: Java .+$`)
 	targetRelease             = regexp.MustCompile(`(?m)^\[INFO\] Analysis target JDK release: (\d+)$`)
 	forbiddenRuntimeIdentity  = regexp.MustCompile(`( in JAVA_RUNTIME ).*?( \((?:Available runtime evidence|Exact invocation found))`)
 	forbiddenRuntimeVersion   = regexp.MustCompile(`(, version=)[^,]+(, targetRelease=)`)
@@ -645,6 +646,7 @@ func normalizeOutput(output, root, evidencePath string) []string {
 		line = strings.ReplaceAll(line, root, "<PROJECT_ROOT>")
 		line = snapshotAt.ReplaceAllString(line, "${1}<TIMESTAMP>")
 		line = runtimeRelease.ReplaceAllString(line, "${1}<RUNTIME_RELEASE>")
+		line = runtimeImageCaption.ReplaceAllString(line, "[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)")
 		line = forbiddenRuntimeIdentity.ReplaceAllString(line, "${1}<RUNTIME_IDENTITY>${2}")
 		if strings.Contains(line, "evidence=RUNTIME_REACHABILITY") || strings.Contains(line, "evidence=DIRECT_RUNTIME_CALL") {
 			line = forbiddenRuntimeVersion.ReplaceAllString(line, "${1}<RUNTIME_VERSION>${2}")
@@ -652,6 +654,7 @@ func normalizeOutput(output, root, evidencePath string) []string {
 		}
 		if activeTarget != "" {
 			line = strings.ReplaceAll(line, "Analysis target JDK release: "+activeTarget, "Analysis target JDK release: <RUNTIME_RELEASE>")
+			line = strings.ReplaceAll(line, "Analyzed runtime releases: ["+activeTarget+"]", "Analyzed runtime releases: [<RUNTIME_RELEASE>]")
 			line = strings.ReplaceAll(line, ", targetRelease="+activeTarget+",", ", targetRelease=<RUNTIME_RELEASE>,")
 		}
 		line = trimGeneration.ReplaceAllString(line, "${1}<TRIM_GENERATION>/")

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.objectweb.asm.ClassReader;
@@ -65,14 +66,21 @@ public final class ArchiveClassScanner {
     /** Scans selected base internal class names in the open archive. */
     public Map<String, Set<String>> scanSelected(final Set<String> selectedInternalNames)
         throws IOException {
+      return scanSelected(selectedInternalNames, null);
+    }
+
+    /** Also reports each selected class's direct supertypes as internal names. */
+    public Map<String, Set<String>> scanSelected(
+        final Set<String> selectedInternalNames, final BiConsumer<String, String> supertypes)
+        throws IOException {
       if (selectedInternalNames == null || selectedInternalNames.isEmpty()) {
         return Map.of();
       }
       final Map<String, Set<String>> byClass = HashMap.newHashMap(selectedInternalNames.size());
       if (selectedInternalNames.size() <= DIRECT_LOOKUP_THRESHOLD) {
-        scanByLookup(archive, scope, selectedInternalNames, byClass);
+        scanByLookup(archive, scope, selectedInternalNames, byClass, supertypes);
       } else {
-        scanByStream(archive, scope, selectedInternalNames, byClass);
+        scanByStream(archive, scope, selectedInternalNames, byClass, supertypes);
       }
       return byClass;
     }
@@ -87,12 +95,13 @@ public final class ArchiveClassScanner {
       final JarFile archive,
       final Path scope,
       final Set<String> selectedInternalNames,
-      final Map<String, Set<String>> byClass)
+      final Map<String, Set<String>> byClass,
+      final BiConsumer<String, String> supertypes)
       throws IOException {
     for (final String internalName : selectedInternalNames) {
       final JarEntry entry = archive.getJarEntry(internalName + CLASS_SUFFIX);
       if (entry != null && !entry.isDirectory()) {
-        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry));
+        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry, supertypes));
       }
     }
   }
@@ -101,7 +110,8 @@ public final class ArchiveClassScanner {
       final JarFile archive,
       final Path scope,
       final Set<String> selectedInternalNames,
-      final Map<String, Set<String>> byClass)
+      final Map<String, Set<String>> byClass,
+      final BiConsumer<String, String> supertypes)
       throws IOException {
     for (final JarEntry entry : archive.stream().toList()) {
       final String name = entry.getName();
@@ -112,14 +122,18 @@ public final class ArchiveClassScanner {
       }
       final String internalName = name.substring(0, name.length() - CLASS_SUFFIX.length());
       if (selectedInternalNames.contains(internalName)) {
-        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry));
+        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry, supertypes));
       }
     }
   }
 
   @SuppressWarnings("PMD.AvoidCatchingGenericException")
   private static Set<String> scanEntryNonDebug(
-      final JarFile archive, final Path scope, final JarEntry entry) throws IOException {
+      final JarFile archive,
+      final Path scope,
+      final JarEntry entry,
+      final BiConsumer<String, String> supertypes)
+      throws IOException {
     final Set<String> references = new HashSet<>();
     try (InputStream input = archive.getInputStream(entry)) {
       new ClassReader(input)
@@ -131,7 +145,8 @@ public final class ArchiveClassScanner {
                     if (kind != AsmClassReferenceVisitor.ReferenceKind.DEBUG_METADATA) {
                       references.add(TraceData.normalizeToDot(internalName));
                     }
-                  }),
+                  },
+                  supertypes),
               0);
     } catch (final RuntimeException exception) {
       throw new IOException(

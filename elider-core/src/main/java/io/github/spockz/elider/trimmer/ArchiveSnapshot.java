@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -156,8 +157,19 @@ final class ArchiveSnapshot {
     return classesByName.keySet();
   }
 
-  Map<String, byte[]> classBytes() {
-    return classesByName;
+  Set<String> directSupertypes(final String className) {
+    final byte[] bytes = classesByName.get(className);
+    if (bytes == null) {
+      return Set.of();
+    }
+    final ClassReader reader = new ClassReader(bytes);
+    final Set<String> parents = new LinkedHashSet<>();
+    final String superclass = reader.getSuperName();
+    if (superclass != null) {
+      parents.add(superclass);
+    }
+    java.util.Collections.addAll(parents, reader.getInterfaces());
+    return parents;
   }
 
   ClassReferenceEvidence.Result referenceEvidence(

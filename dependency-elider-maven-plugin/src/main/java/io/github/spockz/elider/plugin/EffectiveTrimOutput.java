@@ -61,7 +61,8 @@ final class EffectiveTrimOutput {
                     request, effectiveOutput, inputDigests),
                 request
                     .cacheProducerIdentity()
-                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity)),
+                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity),
+                request.runtimePlatforms()),
             inputDigests);
     final String completeFingerprint = fingerprint.value();
     final Path generation =

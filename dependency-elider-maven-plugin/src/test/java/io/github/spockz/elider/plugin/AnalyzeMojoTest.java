@@ -110,7 +110,7 @@ final class AnalyzeMojoTest {
   @Test
   void sourceRootsCompleteFailsBeforeAnalysisWithMigrationGuidance() throws Exception {
     final MavenProject project = AnalyzeMojoTestArtifactSupport.project(tempDir, "early-rejection");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     final AtomicBoolean analysisStarted = new AtomicBoolean();
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.set(mojo, "sourceRootsComplete", true);
@@ -212,7 +212,7 @@ final class AnalyzeMojoTest {
     final Set<Artifact> directSnapshot = Set.copyOf(project.getDependencyArtifacts());
     final Path trace = tempDir.resolve("runtime.lst");
     Files.writeString(trace, TRACE_CLASS_USAGE);
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
@@ -329,7 +329,7 @@ final class AnalyzeMojoTest {
     project.setArtifacts(artifacts);
     final Path trace = tempDir.resolve("predicted-elisions.lst");
     Files.writeString(trace, TRACE_CLASS_USAGE);
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
@@ -407,7 +407,7 @@ final class AnalyzeMojoTest {
     project.setBuild(build);
     final Path trace = tempDir.resolve("trim-analysis.lst");
     Files.writeString(trace, "sample.Keep\n");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
@@ -515,7 +515,7 @@ final class AnalyzeMojoTest {
 
   @Test
   void rejectsAnEmptyTraceList() throws ReflectiveOperationException {
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(
         mojo, PROJECT_FIELD, AnalyzeMojoTestArtifactSupport.project(tempDir, "skipped-analysis"));
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
@@ -561,7 +561,7 @@ final class AnalyzeMojoTest {
   @Test
   @DisplayName("ADR-0011: leafOnly skips intermediate module in AnalyzeMojo")
   void leafOnlySkipsIntermediateReactorModule() throws Exception {
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     final MavenProject intermediate =
         AnalyzeMojoTestArtifactSupport.project(tempDir, "intermediate-core");
     intermediate.setGroupId("io.github.spockz.test");

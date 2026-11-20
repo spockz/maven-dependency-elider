@@ -60,9 +60,21 @@ final class DuplicateClasses {
     final TrimExecutionEnvironment environment =
         MavenDependencyTrimmer.executionEnvironment(request);
     return resolve(
-        request.policy().duplicateClasses(),
-        libraries,
-        Math.max(environment.targetRelease(), environment.runtimeRelease()));
+        request.policy().duplicateClasses(), libraries, request.runtimePlatforms(), environment);
+  }
+
+  /** MRJAR class ownership grows with the selected release. */
+  /* package */ static List<ToleratedDuplicate> resolve(
+      final DuplicateClassPolicy policy,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> libraries,
+      final MavenRuntimePlatforms selected,
+      final TrimExecutionEnvironment environment)
+      throws IOException {
+    final int release =
+        selected == null
+            ? Math.max(environment.targetRelease(), environment.runtimeRelease())
+            : selected.highestInspectedRelease().orElse(0);
+    return release == 0 ? List.of() : resolve(policy, libraries, release);
   }
 
   @SuppressWarnings({"PMD.UseConcurrentHashMap", "PMD.AvoidInstantiatingObjectsInLoops"})
