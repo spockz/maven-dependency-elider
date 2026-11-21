@@ -14,9 +14,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import proguard.classfile.ClassPool;
 
 /** Reads archive ownership and MRJAR target requirements. */
+@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class TierInventoryReader {
   /** Bounds and policy belong to this analysis operation. */
   private final MultiReleaseTrimContext operation;
@@ -38,14 +40,27 @@ final class TierInventoryReader {
   }
 
   /* package */ JdkClassTablePlan readJdkClassTables(final List<Integer> tiers) throws IOException {
+    final MavenRuntimePlatforms selected = operation.request().runtimePlatforms();
+    if (selected != null) {
+      final List<JdkPlatformContext.PlatformSnapshot> snapshots =
+          selected.requireLinkage().stream().distinct().toList();
+      final JdkApiClassTableReader reader = new JdkApiClassTableReader();
+      final Map<Integer, List<ClassPool>> tables =
+          snapshots.stream()
+              .collect(
+                  Collectors.groupingBy(
+                      JdkPlatformContext.PlatformSnapshot::runtimeRelease,
+                      Collectors.mapping(reader::readFrozen, Collectors.toUnmodifiableList())));
+      return new JdkClassTablePlan(snapshots, Map.copyOf(tables));
+    }
     final JdkPlatformContext.PlatformSnapshot snapshot =
         MavenPlatformContextHolder.forOperation(operation.request().session()).snapshot();
     final JdkApiClassTableReader reader = new JdkApiClassTableReader();
     final ClassPool frozenTable = reader.readFrozen(snapshot);
-    final Map<Integer, ClassPool> tablesByRelease =
+    final Map<Integer, List<ClassPool>> tablesByRelease =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     for (final int tier : tiers) {
-      tablesByRelease.put(tier, frozenTable);
+      tablesByRelease.put(tier, List.of(frozenTable));
     }
     return new JdkClassTablePlan(List.of(snapshot), Map.copyOf(tablesByRelease));
   }
@@ -63,8 +78,13 @@ final class TierInventoryReader {
     final Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo> multiRelease =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     final Set<Integer> tiers = new TreeSet<>();
-    tiers.add(operation.targetRelease());
-    tiers.add(operation.runtimeRelease());
+    final MavenRuntimePlatforms selected = operation.request().runtimePlatforms();
+    if (selected == null) {
+      tiers.add(operation.targetRelease());
+      tiers.add(operation.runtimeRelease());
+    } else {
+      selected.requireLinkage().forEach(image -> tiers.add(image.runtimeRelease()));
+    }
     final Map<Path, Set<String>> classesBySourcePath =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     final Set<Path> projectedSources = new TreeSet<>();
@@ -80,7 +100,9 @@ final class TierInventoryReader {
       if (!classInventory.hasUnsupportedVersionedClasses()) {
         continue;
       }
-      addAnalyzedTiers(classInventory, tiers);
+      if (selected == null) {
+        addAnalyzedTiers(classInventory, tiers);
+      }
       addMultiReleaseCandidate(
           snapshot, source, classInventory, passThrough, projectionDirectory, multiRelease);
     }
@@ -114,12 +136,36 @@ final class TierInventoryReader {
     if (!passThrough.retained().contains(snapshot) || classInventory.hasRootModuleDescriptor()) {
       return;
     }
+    final MavenRuntimePlatforms selected = operation.request().runtimePlatforms();
+    if (selected != null) {
+      final int firstRelease =
+          selected.available().stream()
+              .mapToInt(JdkPlatformContext.PlatformSnapshot::runtimeRelease)
+              .min()
+              .orElseThrow();
+      if (classInventory.versionedClassReleases().stream()
+          .anyMatch(release -> release > firstRelease && release <= operation.targetRelease())) {
+        throw new IOException(
+            "Cannot elevate "
+                + snapshot.coordinate()
+                + " to Java "
+                + operation.targetRelease()
+                + " while preserving its selected Java "
+                + firstRelease
+                + " view. Configure pass-through for this archive.");
+      }
+    }
+    final MultiReleaseLibraryProjection.TargetProjection targetProjection =
+        MultiReleaseLibraryProjection.inspectTargetProjection(
+            source, snapshot.coordinate(), projectionDirectory, operation.targetRelease());
     candidates.put(
         snapshot,
         new MultiReleaseCandidateInfo(
-            MultiReleaseLibraryProjection.requiredTargetRoots(
-                source, snapshot.coordinate(), projectionDirectory, operation.targetRelease()),
-            classInventory.classNamesAboveRelease(operation.targetRelease())));
+            targetProjection.requiredTargetRoots(),
+            classInventory.classNamesAboveRelease(operation.targetRelease()),
+            targetProjection.projectionPath(),
+            targetProjection.targetClasses(),
+            targetProjection.sourceData()));
   }
 
   /* package */ record Inventory(
@@ -166,15 +212,26 @@ final class TierInventoryReader {
   }
 
   /* package */ record MultiReleaseCandidateInfo(
-      Set<String> requiredTargetRoots, Set<String> versionedClasses) {
+      Set<String> requiredTargetRoots,
+      Set<String> versionedClasses,
+      Path targetProjection,
+      Set<String> targetClasses,
+      io.github.spockz.elider.trimmer.MultiReleaseArchivePlan.SourceData sourceData) {
     /* package */ MultiReleaseCandidateInfo {
       requiredTargetRoots = Set.copyOf(requiredTargetRoots);
       versionedClasses = Set.copyOf(versionedClasses);
+      targetClasses = Set.copyOf(targetClasses);
+    }
+
+    /* package */ MultiReleaseCandidateInfo(
+        final Set<String> requiredTargetRoots, final Set<String> versionedClasses) {
+      this(requiredTargetRoots, versionedClasses, null, Set.of(), null);
     }
   }
 
   /* package */ record JdkClassTablePlan(
-      List<JdkPlatformContext.PlatformSnapshot> snapshots, Map<Integer, ClassPool> byRelease) {}
+      List<JdkPlatformContext.PlatformSnapshot> snapshots,
+      Map<Integer, List<ClassPool>> byRelease) {}
 
   /* package */ record PreparedInventory(
       Inventory inventory, JdkClassTablePlan classTables, List<TierContext> projections) {}

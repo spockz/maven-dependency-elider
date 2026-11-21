@@ -39,13 +39,14 @@ final class MavenAnalysisPreparation {
       final MavenAnalysisResolutionContext resolutionContext,
       final MavenBanPlan banPlan)
       throws IOException, MojoFailureException {
-    final AnalysisOptions options =
+    final AnalysisOptions captured =
         resolutionContext == null
             ? requestedOptions
             : requestedOptions.withEnvironment(resolutionContext.environment());
-    verifyCompleteness(options.completeness());
     final MavenProject analysisProject =
         resolutionContext == null ? project : resolutionContext.project();
+    verifyCompleteness(captured.completeness());
+    final AnalysisOptions options = selectProductionModules(analysisProject, captured);
     final MavenAnalysisInventory.Snapshot inventory =
         resolutionContext == null
             ? MavenAnalysisInventory.capture(project)
@@ -130,11 +131,27 @@ final class MavenAnalysisPreparation {
         evidence.productionOutputFingerprint(),
         inventory.resolvedFingerprint(),
         inventory.directFingerprint(),
-        graphBinding,
+        withPlatformBinding(graphBinding, options.runtimePlatforms()),
         policyOptions,
         evidence.sourceAttributionFallback(),
         resolutionContext,
         verifiedBanPlan);
+  }
+
+  private static AnalysisOptions selectProductionModules(
+      final MavenProject project, final AnalysisOptions options) throws IOException {
+    final MavenRuntimePlatforms selected = options.runtimePlatforms();
+    return selected == null
+        ? options
+        : options.withRuntimePlatforms(
+            selected.forProductionOutput(MavenProductionOutputPaths.resolve(project, options)));
+  }
+
+  private static MavenElisionGraphBinding.Result withPlatformBinding(
+      final MavenElisionGraphBinding.Result binding, final MavenRuntimePlatforms selected) {
+    return selected == null
+        ? binding
+        : binding.withAdditionalOperationFingerprint(selected.fingerprint());
   }
 
   /* default */ static void rejectRequestedBans(
@@ -222,7 +239,8 @@ final class MavenAnalysisPreparation {
           DuplicateClasses.resolve(
               options.trim().duplicateClasses(),
               libraries,
-              Math.max(environment.targetRelease(), environment.runtimeRelease()))) {
+              options.runtimePlatforms(),
+              environment)) {
         keep.addAll(duplicate.owners());
       }
     }
@@ -237,13 +255,15 @@ final class MavenAnalysisPreparation {
       final Set<String> requiredClasses)
       throws MojoFailureException {
     final ElisionDecision jars =
-        new DependencyPruner()
-            .prune(
-                inventory.candidates(),
-                evidence.index(),
-                evidence.trace(),
-                ElisionArtifactPolicy.config(options.retainedArtifacts(), keep),
-                requiredClasses);
+        inventory.candidates().isEmpty()
+            ? new ElisionDecision(Set.of(), Set.of(), java.util.Map.of(), java.util.Map.of(), 0L)
+            : new DependencyPruner()
+                .prune(
+                    inventory.candidates(),
+                    evidence.index(),
+                    evidence.trace(),
+                    ElisionArtifactPolicy.config(options.retainedArtifacts(), keep),
+                    requiredClasses);
     return ElisionArtifactPolicy.retainNonJarArtifacts(jars, inventory.views().resolvedSnapshots());
   }
 }

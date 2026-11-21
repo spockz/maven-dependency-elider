@@ -352,7 +352,9 @@ final class MavenElisionReportPrerequisiteProofCodec {
       throw error(path, "must be an object");
     }
     final Set<String> actual = new HashSet<>();
-    node.fieldNames().forEachRemaining(actual::add);
+    for (final java.util.Map.Entry<String, JsonNode> entry : node.properties()) {
+      actual.add(entry.getKey());
+    }
     if (!actual.equals(fields)) {
       final Set<String> missing = new TreeSet<>(fields);
       missing.removeAll(actual);

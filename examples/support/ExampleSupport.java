@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
 
 public final class ExampleSupport {
   private static final ObjectMapper JSON = new ObjectMapper();
+  private static final String SPRING_LOGBACK_VERSION = "1.5.38";
 
   private ExampleSupport() {}
 
@@ -41,7 +42,7 @@ public final class ExampleSupport {
     if (arguments.length == 0) {
       throw new IllegalArgumentException(
           "Expected run-spring-endpoint, verify-class-report, verify-effective-graph-report, "
-              + "verify-cve-report, verify-analyze-precondition, "
+              + "verify-cve-report, verify-spring-analysis, "
               + "verify-cve-unused-expected-drop, "
               + "verify-no-whole-artifact-drops, verify-basic-graph-drop, "
               + "verify-spring-expected-drop, "
@@ -53,7 +54,7 @@ public final class ExampleSupport {
       case "verify-class-report" -> verifyClassReport(arguments);
       case "verify-effective-graph-report" -> verifyEffectiveGraphReport(arguments);
       case "verify-cve-report" -> verifyCveReport(arguments);
-      case "verify-analyze-precondition" -> verifyAnalyzePrecondition(arguments);
+      case "verify-spring-analysis" -> verifySpringAnalysis(arguments);
       case "verify-cve-sboms" -> verifyCveSboms(arguments);
       case "verify-cve-unused-expected-drop" -> verifyCveUnusedExpectedDrop(arguments);
       case "verify-no-whole-artifact-drops" -> verifyNoWholeArtifactDrops(arguments);
@@ -380,9 +381,7 @@ public final class ExampleSupport {
     if (!profiles.isObject()) {
       throw invalidExclusionReview();
     }
-    final var fields = profiles.fields();
-    while (fields.hasNext()) {
-      final var profile = fields.next();
+    for (final var profile : profiles.properties()) {
       if (profile.getKey().isBlank()) {
         throw invalidExclusionReview();
       }
@@ -815,7 +814,9 @@ public final class ExampleSupport {
 
   private static Set<String> fieldNames(final JsonNode row) {
     final Set<String> names = new HashSet<>();
-    row.fieldNames().forEachRemaining(names::add);
+    for (final var entry : row.properties()) {
+      names.add(entry.getKey());
+    }
     return names;
   }
 
@@ -1119,15 +1120,24 @@ public final class ExampleSupport {
     }
     final Path reportPath = requireAbsolutePath(arguments[1], "REPORT_JSON");
     final JsonNode drops = JSON.readTree(reportPath.toFile()).path("droppedArtifacts");
-    if (!drops.isArray() || drops.size() != 1) {
-      throw new IOException("Spring fixture must drop exactly the unused Commons Codec artifact");
+    final Map<String, String> expectedScopes = Map.of(
+        "commons-codec:commons-codec", "compile",
+        "at.yawk.lz4:lz4-java", "runtime",
+        "com.github.luben:zstd-jni", "runtime");
+    if (!drops.isArray() || drops.size() != expectedScopes.size()) {
+      throw new IOException("Unexpected Spring fixture artifact drops: " + drops);
     }
-    final JsonNode drop = drops.get(0);
-    if (!"commons-codec:commons-codec:jar:1.16.1 (compile)"
-            .equals(drop.path("coordinate").asText())
-        || drop.path("programClassesRemoved").asInt(0) <= 0) {
-      throw new IOException(
-          "Spring fixture must remove the expected Commons Codec artifact and its classes");
+    final Set<String> observed = new HashSet<>();
+    for (final JsonNode drop : drops) {
+      final ReportCoordinate coordinate = parseCanonicalCoordinate(drop.path("coordinate").asText());
+      final String identity = coordinate.groupId() + ":" + coordinate.artifactId();
+      if (!coordinate.scope().equals(expectedScopes.get(identity))
+          || !"jar".equals(coordinate.type())
+          || !coordinate.classifier().isEmpty()
+          || drop.path("programClassesRemoved").asInt(0) <= 0
+          || !observed.add(identity)) {
+        throw new IOException("Unexpected Spring fixture artifact drop: " + drop);
+      }
     }
   }
 
@@ -1135,8 +1145,14 @@ public final class ExampleSupport {
     if (arguments.length != 2) {
       throw new IllegalArgumentException("Usage: verify-spring-snakeyaml-retained REPORT_JSON");
     }
-    final String coordinate = "org.yaml:snakeyaml:jar:2.2 (compile)";
     final JsonNode report = JSON.readTree(requireAbsolutePath(arguments[1], "REPORT_JSON").toFile());
+    final JsonNode trim =
+        singleMatching(
+            report.path("trimmedArtifacts"),
+            value -> value.path("coordinate").asText().startsWith("org.yaml:snakeyaml:jar:"),
+            "retained SnakeYAML trim result");
+    final String coordinate = trim.path("coordinate").asText();
+    final ReportCoordinate resolved = parseCanonicalCoordinate(coordinate);
     boolean rawCandidate = false;
     for (final JsonNode item : report.path("rawDroppedCoordinates")) {
       if (item.isTextual() && coordinate.equals(item.textValue())) {
@@ -1155,12 +1171,9 @@ public final class ExampleSupport {
       throw new IOException("Spring SnakeYAML must remain a raw candidate without an effective drop");
     }
 
-    final JsonNode trim =
-        singleMatching(
-            report.path("trimmedArtifacts"),
-            value -> coordinate.equals(value.path("coordinate").asText()),
-            "retained SnakeYAML trim result");
-    if (!"elevated_and_trimmed".equals(trim.path("mrjarStatus").asText())) {
+    if (!"compile".equals(resolved.scope())
+        || !resolved.classifier().isEmpty()
+        || !"elevated_and_trimmed".equals(trim.path("mrjarStatus").asText())) {
       throw new IOException("Retained SnakeYAML must preserve its elevated and trimmed MRJAR status");
     }
 
@@ -1173,7 +1186,7 @@ public final class ExampleSupport {
     for (final JsonNode node : nodes) {
       if ("org.yaml".equals(node.path("artifact").path("groupId").asText())
           && "snakeyaml".equals(node.path("artifact").path("artifactId").asText())
-          && "2.2".equals(node.path("artifact").path("version").asText())
+          && resolved.version().equals(node.path("artifact").path("version").asText())
           && "compile".equals(node.path("dependency").path("scope").asText())) {
         nodeId = node.path("id").asText();
         break;
@@ -1480,7 +1493,7 @@ public final class ExampleSupport {
         }
       }
       case "example-spring-boot-app" -> {
-        for (final String expected : List.of("CVE-2024-50379", "CVE-2026-18401", "CVE-2026-77310")) {
+        for (final String expected : List.of("CVE-2024-50379", "CVE-2026-77310")) {
           singleMatching(
               findings,
               value -> expected.equals(value.path("vulnerabilityId").asText()),
@@ -1489,23 +1502,17 @@ public final class ExampleSupport {
         final JsonNode observedCve =
             singleMatching(
                 findings,
-                value -> "CVE-2026-68494".equals(value.path("vulnerabilityId").asText()),
+                value -> "CVE-2026-68498".equals(value.path("vulnerabilityId").asText())
+                    && "com.fasterxml.jackson.core".equals(value.path("candidate").path("groupId").asText()),
                 "generic Spring fixture finding");
         if (!"AFFECTED".equals(observedCve.path("applicability").asText())
             || !"NO_PROOF".equals(observedCve.path("outcome").asText())) {
           throw new IOException("Spring fixture finding must remain unverified without physical proof");
         }
         final Path vexPath = reportJsonPath.getParent().resolve("dependency-elider.openvex.json");
-        if (!Files.isRegularFile(vexPath)) {
-          throw new IOException(
-              "example-spring-boot-app must emit VEX for the physically proven prerequisite finding");
-        }
-        final JsonNode vex = JSON.readTree(vexPath.toFile());
-        for (final JsonNode statement : vex.path("statements")) {
-          if (!"CVE-2025-11226".equals(statement.path("vulnerability").path("name").asText())) {
-            throw new IOException(
-                "Spring VEX must not attest findings without verified physical proof");
-          }
+        verifySpringLogbackScope(report);
+        if (Files.exists(vexPath)) {
+          throw new IOException("Spring fixture must not attest findings without verified physical proof");
         }
       }
       default -> {}
@@ -1613,6 +1620,9 @@ public final class ExampleSupport {
             "post-elision inventory must retain components whose code was not removed as a whole"
                 + " artifact");
       }
+      if ("example-spring-boot-app".equals(fixture)) {
+        return;
+      }
       if (!Files.exists(vexPath)) {
         throw new IOException("inactive precondition CVE must produce OpenVEX");
       }
@@ -1625,19 +1635,21 @@ public final class ExampleSupport {
       if (!statements.isArray() || statements.isEmpty()) {
         throw new IOException("OpenVEX must contain at least one statement");
       }
-      verifySafeClassPrecondition(
-          report, post, vexJson, "example-spring-boot-app".equals(fixture) ? "1.5.11" : "1.5.18");
+      verifySafeClassPrecondition(report, post, vexJson, "1.5.18");
     } else {
       throw new IOException("Unsupported CVE SBOM fixture: " + fixture);
     }
   }
 
-  private static void verifyAnalyzePrecondition(final String[] arguments) throws IOException {
+  private static void verifySpringAnalysis(final String[] arguments) throws IOException {
     if (arguments.length != 2) {
-      throw new IllegalArgumentException("Usage: verify-analyze-precondition ANALYSIS_REPORT");
+      throw new IllegalArgumentException("Usage: verify-spring-analysis ANALYSIS_REPORT");
     }
     final Path reportPath = requireAbsolutePath(arguments[1], "ANALYSIS_REPORT");
-    final JsonNode report = JSON.readTree(reportPath.toFile());
+    verifySpringLogbackScope(JSON.readTree(reportPath.toFile()));
+  }
+
+  private static void verifySpringLogbackScope(final JsonNode report) throws IOException {
     singleMatching(
         report.path("catalogAdoptions"),
         value -> "logback-core-cve-2025-11226".equals(value.path("catalogId").asText()),
@@ -1646,38 +1658,15 @@ public final class ExampleSupport {
         singleMatching(
             report.path("genericFindings"),
             value -> "CVE-2025-11226".equals(value.path("vulnerabilityId").asText()),
-            "Analyze Logback prerequisite prediction");
+            "Spring Logback finding outside the catalog's evidence scope");
     if (!"ch.qos.logback".equals(finding.path("candidate").path("groupId").asText())
         || !"logback-core".equals(finding.path("candidate").path("artifactId").asText())
-        || !"1.5.11".equals(finding.path("candidate").path("version").asText())
-        || !"AFFECTED".equals(finding.path("applicability").asText())
-        || !"NO_PROOF".equals(finding.path("outcome").asText())
-        || !finding.path("prerequisiteProof").isNull()) {
-      throw new IOException(
-          "Analyze must not claim physical proof for an unsupported direct-goal invocation");
-    }
-    final JsonNode prediction = finding.path("prerequisitePrediction");
-    final JsonNode groups = prediction.path("groups");
-    final String detail = prediction.path("detail").asText();
-    if (!prediction.isObject()
-        || (!detail.contains("direct analyze requires elide.productionClassesComplete=true for runtime proof")
-            && !detail.contains("Maven goal sequence is not a safe default lifecycle invocation"))
-        || !groups.isArray()
-        || groups.size() != 1
-        || groups.get(0).path("disarmed").asBoolean()
-        || !groups.get(0).path("members").isArray()
-        || groups.get(0).path("members").size() != 1) {
-      throw new IOException("Analyze must retain its complete prerequisite prediction group");
-    }
-    final JsonNode member = groups.get(0).path("members").get(0);
-    if (!"org.codehaus.janino.ClassBodyEvaluator".equals(
-            member.path("claim").path("requiresClass").asText())
-        || !"UNKNOWN".equals(member.path("state").asText())
-        || !"UNKNOWN".equals(member.path("reason").asText())
-        || !member.path("providers").isArray()
-        || !member.path("providers").isEmpty()) {
-      throw new IOException(
-          "Analyze must retain the unknown baseline prerequisite status for the unsupported invocation");
+        || !SPRING_LOGBACK_VERSION.equals(finding.path("candidate").path("version").asText())
+        || !"NO_AFFECTED_ASSERTION".equals(finding.path("applicability").asText())
+        || !"UNRESOLVED".equals(finding.path("outcome").asText())
+        || !finding.path("prerequisiteProof").isNull()
+        || !finding.path("prerequisitePrediction").isNull()) {
+      throw new IOException("Spring Logback is outside the catalog's version scope: " + finding);
     }
   }
 

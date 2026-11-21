@@ -7,7 +7,9 @@ import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheEntry;
 import io.github.spockz.elider.plugin.ParallelTrimExecutor.PreparedOutputCleanup;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
+import io.github.spockz.elider.plugin.TrimGenerationPublisher.OutputCheck;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.PreparedEffectiveOutputs;
+import io.github.spockz.elider.plugin.TrimGenerationPublisher.StagedArchive;
 import io.github.spockz.elider.trimmer.ArchiveSanitizer;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
@@ -43,6 +45,17 @@ final class EffectiveOutputStaging implements AutoCloseable {
       final EffectiveOutputPlan outputPlan,
       final int trimWorkers)
       throws IOException {
+    return prepareOutputs(work, inputDigests, outputPlan, trimWorkers, Map.of(), null);
+  }
+
+  /* package */ PreparedEffectiveOutputs prepareOutputs(
+      final List<TrimCandidate> work,
+      final Map<Path, ArtifactDigests> inputDigests,
+      final EffectiveOutputPlan outputPlan,
+      final int trimWorkers,
+      final Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources,
+      final OutputCheck outputCheck)
+      throws IOException {
     final Map<TrimCandidate, CacheEntry> entries = TrimCollections.lookupMap();
     final List<ArtifactTrimRecord> records = new ArrayList<>();
     final List<TrimCandidate> toSanitize = new ArrayList<>();
@@ -72,11 +85,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
               final Set<String> removedProviders = candidate.descriptorPlan().removedProviders();
               if (candidate.archive().multiRelease()) {
                 final MultiReleaseArchivePlan plan =
-                    MultiReleaseArchivePlan.create(
-                        candidate.archive().snapshot().filePath(),
-                        outputPlan.analysis().targetRelease(),
-                        candidate.analysis().retainedClasses(),
-                        removedProviders);
+                    prepareMultiReleasePlan(
+                        candidate, outputPlan, inputDigests, multiReleaseSources, removedProviders);
                 staged =
                     sanitizer.prepareMultiRelease(
                         candidate.archive().snapshot().filePath(),
@@ -108,6 +118,15 @@ final class EffectiveOutputStaging implements AutoCloseable {
               return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
             },
             preparedOutputCleanup);
+    if (outputCheck != null) {
+      outputCheck.check(
+          prepared.stream()
+              .map(PendingOutput::prepared)
+              .collect(
+                  java.util.stream.Collectors.toUnmodifiableMap(
+                      ArchiveSanitizer.PreparedOutput::coordinate,
+                      output -> new StagedArchive(output.temporaryJar(), output.outputPath()))));
+    }
     final List<ArtifactTrimRecord> stagedRecords = new ArrayList<>(prepared.size());
     for (final PendingOutput pending : prepared) {
       stagedRecords.add(sanitizer.publish(pending.prepared()));
@@ -126,6 +145,33 @@ final class EffectiveOutputStaging implements AutoCloseable {
   @Override
   public void close() throws IOException {
     preparedOutputCleanup.close();
+  }
+
+  private static MultiReleaseArchivePlan prepareMultiReleasePlan(
+      final TrimCandidate candidate,
+      final EffectiveOutputPlan outputPlan,
+      final Map<Path, ArtifactDigests> inputDigests,
+      final Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources,
+      final Set<String> removedProviders)
+      throws IOException {
+    final Path normalizedSource =
+        candidate.archive().snapshot().filePath().toAbsolutePath().normalize();
+    final MultiReleaseArchivePlan.SourceData sharedSource =
+        multiReleaseSources.get(normalizedSource);
+    final MultiReleaseArchivePlan.SourceData sourceData;
+    if (sharedSource != null) {
+      sourceData = sharedSource;
+    } else {
+      MultiReleaseWorkObserver.recordSourceInspected(normalizedSource);
+      sourceData =
+          MultiReleaseArchivePlan.inspectSource(
+              normalizedSource, inputDigests.get(normalizedSource));
+    }
+    return MultiReleaseArchivePlan.create(
+        sourceData,
+        outputPlan.analysis().targetRelease(),
+        candidate.analysis().retainedClasses(),
+        removedProviders);
   }
 
   private static boolean requiresClasspathOnlyModuleRemoval(

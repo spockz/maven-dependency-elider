@@ -192,6 +192,9 @@ The `elide` goal writes two structured JSON records:
 
 The persisted Elide summary records ban outcomes in `appliedBans`. Its `rawDroppedCoordinates` metric excludes policy-forced absences, while total absent-artifact metrics include them.
 
+Both summaries save explicit forbidden-code observations in `forbiddenCodeAssessments`. The
+`report` goal replays the saved outcomes and evidence.
+
 Duplicate classes fail analysis by default. Use `elide.retainDuplicateClassOwners` to accept
 specific class names or globs and retain every provider JAR whole, or
 `elide.trimDuplicateClassOwners` to keep the duplicates in every provider while trimming unused
@@ -236,9 +239,10 @@ release from the effective compile configuration takes precedence, then its conf
 then the active runtime feature as Elider's analysis default. Target-only configuration is valid;
 source-only configuration does not select a target. The default `compile` execution is considered
 even when its POM entry has no explicit goals, while `testCompile` does not select the production
-target. The runtime field records the JDK running Maven. The `report` goal validates and replays both
-saved values without substituting the current runtime, and neither value makes the active JDK class
-table a historical API model.
+target. The runtime field records the JDK running Maven. Supply the deployment runtime homes or
+archives in `elide.runtimeInputs`. The report records the selected images and analyzed releases
+under `executionEnvironment.runtimeCoverage` and replays any compiler-target coverage warning.
+[Runtime input configuration](dependency-elider-maven-plugin/src/site/markdown/usage.md#runtime-inputs)
 
 Internal persisted report and cache formats use independent schema version 1. Their unreleased schemas remain at version 1 and incompatible payloads fail fast. CycloneDX declares `specVersion` 1.6, and OpenVEX uses the 0.2.0 context URL; neither is an internal schema version. Each generated security document's top-level `version` is a document revision counter.
 
@@ -247,6 +251,19 @@ For detailed configuration parameters, see [Plugin Usage](dependency-elider-mave
 ---
 
 ## Vulnerability Findings and Code Evidence
+
+Opt in to forbidden-code assessment through `vulnerabilityMappings` in the POM. A rule names an
+exact class, an exact method signature, or an explicit class wildcard in a Maven artifact, the
+project's production output, or the target Java runtime. `analyze` reports planned outcomes.
+`elide` checks effective staged, cached, and unchanged outputs before publishing Maven views.
+Enable `-Delide.failOnForbiddenCode=true` to fail on a violation. Incomplete evidence is reported
+as `UNKNOWN`. [Forbidden-code configuration](dependency-elider-maven-plugin/src/site/markdown/usage.md#forbidden-code-policy)
+
+The runnable [forbidden-code examples](dependency-elider-maven-plugin/src/site/markdown/usage.md#runnable-forbidden-code-examples)
+show a violation for an exact direct Java runtime call and an unknown result when that call
+is absent. The direct-call check also works when the target runtime image is unavailable. The
+Commons Compress example checks an omitted class, a retained method, and a fixed dependency
+version outside the policy range.
 
 Software Composition Analysis (SCA) suffers from a **four-tier granularity mismatch**:
 
@@ -339,10 +356,10 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 | Resolver extension and mediated artifact graph | Required; fixture verified | Graph-aware decisions require `.mvn/extensions.xml`. Without it, original repository artifacts remain visible. |
 | Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and an active elider execution, `dependency:tree` automatically runs elision first at the selected phase (process-classes by default). See [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java#L583) and [tree assertions](examples/run-elision-cycle.sh#L808). |
 | Class reachability and safe dependency removal | Unit tested; fixture verified | Covers compiled bytecode roots, framework metadata, and graph leaves with retention across ancestors, cycles, and diamonds. |
-| Multi-release dependency JARs | Supported; vertical shading by default | With `elide.trimJars=true`, the selected analysis target is elevated and trimmed; upper tiers are preserved, with sibling closure analyzed through the Maven runtime release. `elide.mrjarStrategy=pass-through` preserves MRJAR bytes. |
-| JDK platform resolution | Active-runtime modules; target API availability is not emulated | Standard module APIs load hierarchy and member declarations from the JVM running Maven. Missing active-runtime references remain unresolved; the compiler target is separate. |
+| Multi-release dependency JARs | Supported; vertical shading by default | The compiler target controls the output baseline. Upper entries are preserved and linkage closure follows explicitly supplied runtime releases. `elide.mrjarStrategy=pass-through` preserves MRJAR bytes. |
+| Runtime linkage | Explicit installed or archived images | Supply `elide.runtimeInputs` for platform-dependent analysis and trimming. Elider reads the system-module declarations from each modular Java 9+ image and reports which release views it analyzed. |
 | Kotlin/JVM libraries and source roots | Partial; JVM bytecode only | Kotlin-compiled dependency bytecode is analyzed through ordinary JVM references. Kotlin metadata is parsed for sibling class isolation but metadata-only references are not closure roots; Kotlin sources are not scanned. See the [Kotlin support matrix](docs/faq.md#what-kotlin-features-are-supported). |
-| JARs with root `module-info.class` | Conservative pass-through on classpath | Retained JARs with root module descriptors are not trimmed. JPMS module-path linkage is unsupported. |
+| JARs with root `module-info.class` | Conservative pass-through on classpath | Retained dependency JARs with root module descriptors remain byte-identical. Elider resolves the production module's system modules against each selected runtime. Arbitrary dependency module paths are outside that scope. |
 | ServiceLoader SPI roots | Supported; positive proof with conservative fallback | Detects constant `ServiceLoader` calls in application bytecode. Unproven SPI roots are retained by default (`<conservativeServiceLoaderRoots>true`); retained declared code prevents omission proof and stays visible in the common finding. |
 | Multi-symbol vulnerability interpretation | Strict fail-closed (open design question) | When an advisory maps multiple vulnerable classes across wide version ranges (e.g. Jackson Core `CVE-2026-68494`), all mapped classes must be present in the original JAR for proof of absence. |
 | Persisted report and CycloneDX pedigree | Unit tested; fixture verified | Verifies report structure, graph data, class and byte metrics, and example pedigree output. |
@@ -418,7 +435,7 @@ The repository includes end-to-end integration fixtures under `examples/`:
 | **`example-cve-unused-app`** | Standalone CVE test | Uses a validated explicit POM `HIGH` assertion for `StringLookup` on Commons Text versions below 1.10.0, proves that class physically absent after trimming, and emits OpenVEX. |
 | **`example-multi-module-reactor`** | Three-module Maven reactor with Shade | Exercises module-local reports and dependency elision for `reactor-common` → `reactor-service` → `reactor-app`, under sequential and `-T 4` builds. |
 | **`example-cve-safe-class-app`** | Standalone CVE test | Explicitly opts into complete inventory inspection and proves the Janino coordinate and `ClassBodyEvaluator` class absent from the Logback 1.5.18 conditional-script path for `CVE-2025-11226`, then emits CycloneDX and OpenVEX precondition evidence while preserving fixture runtime behavior. |
-| **`example-mrjar-app`** | Java 11 app + generated multi-release JAR | Elevates the Java 11 implementation, removes superseded lower and unused target-tier classes, preserves the Java 17 entries byte-for-byte, and runs both selected implementations. |
+| **`example-mrjar-app`** | Java 11 app + generated multi-release JAR | Elevates the Java 11 implementation, preserves the Java 17 entries, and verifies execution on the explicitly selected Maven JDK. The report warns that Java 11 is outside the selected runtime coverage. |
 
 Run the full end-to-end verification suite across all fixtures:
 
@@ -494,6 +511,8 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [21]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -664,6 +683,8 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [21]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -674,7 +695,7 @@ Process exit status: 0
 [INFO]   - commons-codec:commons-codec:jar:1.21.0 (compile): 393.06 KiB original JAR, 136 class entries, 475.86 KiB
 [INFO] Raw trace decision drops before graph safety: 6
 [INFO] Applied bans: none
-[INFO] Program classes pruned from retained JARs: 3923 (uncompressed omitted .class payload bytes: 8.99 MiB; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 3882 (uncompressed omitted .class payload bytes: 8.94 MiB; excludes module descriptors and archive metadata)
 [INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.21.5 (runtime): 31 classes, 136.62 KiB
 [INFO]   - com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime): 22 classes, 15.44 KiB
 [INFO]   - com.google.code.findbugs:jsr305:jar:3.0.2 (runtime): 24 classes, 14.44 KiB
@@ -693,10 +714,7 @@ Process exit status: 0
 [INFO]   - org.springframework.boot:spring-boot-mail:jar:4.1.1 (compile): 2 classes, 451 B
 [INFO]   - org.springframework.boot:spring-boot-micrometer-metrics:jar:4.1.1 (compile): 35 classes, 8.64 KiB
 [INFO]   - org.springframework.boot:spring-boot-micrometer-observation:jar:4.1.1 (compile): 1 classes, 247 B
-[INFO]   - org.springframework.boot:spring-boot-servlet:jar:4.1.1 (compile): 11 classes, 9.01 KiB
-[INFO]   - org.springframework.boot:spring-boot-tomcat:jar:4.1.1 (compile): 14 classes, 13.77 KiB
 [INFO]   - org.springframework.boot:spring-boot-web-server:jar:4.1.1 (compile): 21 classes, 46.11 KiB
-[INFO]   - org.springframework.boot:spring-boot-webmvc:jar:4.1.1 (compile): 16 classes, 25.79 KiB
 [INFO]   - org.springframework:spring-webmvc:jar:7.0.9 (compile): 142 classes, 524.72 KiB
 [INFO]   - org.webjars:webjars-locator-core:jar:0.59 (runtime): 1 classes, 11.43 KiB
 [INFO]   - org.xerial.snappy:snappy-java:jar:1.1.10.7 (runtime): 40 classes, 119.25 KiB
@@ -2319,7 +2337,7 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=a1339af5e23c58c06ca8ebb86dda095173d3f52de8363284fce031014bf82ff2, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
@@ -2333,7 +2351,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.luben:zstd-jni:jar:1.5.7-18 (runtime) {nodeId=n6} [EFFECTIVE_DROP]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n9} [RETAINED, CLASS_TRIMMED]
-[INFO]   ... 112 dependency graph rows elided (sha256:3d7f8a05e6f8c18cdc4b9bcd6c7d85edab3103e5f7b633e97e8563c0692e0a3c)
+[INFO]   ... 112 dependency graph rows elided (sha256:08ac720361a029cfccaeef325fee89afb43d221182e3a5ade87648254fca1d41)
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -2370,6 +2388,8 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [21]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -3174,6 +3194,8 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [21]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -3415,7 +3437,7 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=a1339af5e23c58c06ca8ebb86dda095173d3f52de8363284fce031014bf82ff2, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
@@ -3482,6 +3504,8 @@ Process exit status: 0
 [INFO] Snapshot: analysis prediction at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [21]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true

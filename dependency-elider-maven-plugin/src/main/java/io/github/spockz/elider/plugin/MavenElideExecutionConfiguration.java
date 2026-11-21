@@ -36,6 +36,7 @@ record MavenElideExecutionConfiguration(
       SnykPackageIssuesIntegration.Configuration snykConfiguration,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
+      boolean failOnForbiddenCode,
       MavenElisionOutputPublisher.AfterGenerationStaging afterGenerationStaging) {}
 
   /** Installs the resolver plan after report outputs and Maven views are ready. */

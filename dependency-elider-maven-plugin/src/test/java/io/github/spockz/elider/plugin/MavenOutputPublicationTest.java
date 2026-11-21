@@ -129,7 +129,7 @@ final class MavenOutputPublicationTest {
         new org.apache.maven.plugin.MojoExecution(plugin, "analyze", "process-classes-binding");
     execution.setLifecyclePhase("process-classes");
     set(execution, "source", org.apache.maven.plugin.MojoExecution.Source.LIFECYCLE);
-    final AnalyzeMojo analyzeMojo = new AnalyzeMojo();
+    final AnalyzeMojo analyzeMojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     set(analyzeMojo, "mojoExecution", execution);
     set(analyzeMojo, "project", fixture.project());
     set(analyzeMojo, "session", fixture.session());
@@ -1028,7 +1028,7 @@ final class MavenOutputPublicationTest {
   }
 
   private static ElideMojo newMojo(final MavenSession session) {
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = ExplicitRuntimeMojoTestSupport.newElideMojo();
     set(mojo, "session", session);
     set(mojo, "projectDependenciesResolver", publicationResolver(session.getCurrentProject()));
     return mojo;

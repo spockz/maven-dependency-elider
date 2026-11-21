@@ -84,6 +84,66 @@ public final class MultiReleaseArchivePlan {
     this.hasVersionedOutput = hasVersionedOutput;
   }
 
+  /** Immutable source inventory and digests shared across MRJAR stages. */
+  public static final class SourceData {
+    private final Path sourcePath;
+    private final ArtifactDigests digests;
+    private final MultiReleaseArchiveInventory.ArchiveIndex index;
+
+    private SourceData(
+        final Path sourcePath,
+        final ArtifactDigests digests,
+        final MultiReleaseArchiveInventory.ArchiveIndex index) {
+      this.sourcePath = sourcePath;
+      this.digests = digests;
+      this.index = index;
+    }
+
+    /** Normalized path of the inspected source archive. */
+    public Path sourcePath() {
+      return sourcePath;
+    }
+
+    /** Precomputed source archive digests. */
+    public ArtifactDigests digests() {
+      return digests;
+    }
+  }
+
+  /** Reads immutable MRJAR inventory and digests once for reuse across stages. */
+  public static SourceData inspectSource(final Path source) throws IOException {
+    return inspectSource(source, null);
+  }
+
+  /** Reads immutable MRJAR inventory once, reusing precomputed source digests. */
+  public static SourceData inspectSource(final Path source, final ArtifactDigests digests)
+      throws IOException {
+    Objects.requireNonNull(source, "source");
+    if (!java.nio.file.Files.isRegularFile(source)) {
+      throw new IOException("Original dependency is not a regular JAR file: " + source);
+    }
+    final Path sourcePath = source.toAbsolutePath().normalize();
+    final ArtifactDigests resolvedDigests = resolveSourceDigests(sourcePath, digests);
+    final MultiReleaseArchiveInventory.ArchiveIndex index =
+        MultiReleaseArchiveInventory.read(sourcePath);
+    if (!index.versionedFiles().isEmpty() && !hasMultiReleaseManifest(index.manifest())) {
+      throw new IOException("Versioned entries require Multi-Release: true: " + sourcePath);
+    }
+    return new SourceData(sourcePath, resolvedDigests, index);
+  }
+
+  private static ArtifactDigests resolveSourceDigests(
+      final Path sourcePath, final ArtifactDigests digests) throws IOException {
+    if (digests == null) {
+      return ArtifactDigests.read(sourcePath);
+    }
+    if (!digests.matchesPath(sourcePath)) {
+      throw new IOException(
+          "Captured original dependency digests belong to a different path: " + sourcePath);
+    }
+    return digests;
+  }
+
   /** Creates and validates a target-release elevation plan. */
   public static MultiReleaseArchivePlan create(
       final Path source,
@@ -91,32 +151,41 @@ public final class MultiReleaseArchivePlan {
       final Collection<String> retainedClasses,
       final Collection<String> removedServiceProviders)
       throws IOException {
-    Objects.requireNonNull(source, "source");
+    return create(inspectSource(source), targetRelease, retainedClasses, removedServiceProviders);
+  }
+
+  /** Creates and validates a target-release elevation plan from shared source data. */
+  public static MultiReleaseArchivePlan create(
+      final SourceData sourceData,
+      final int targetRelease,
+      final Collection<String> retainedClasses,
+      final Collection<String> removedServiceProviders)
+      throws IOException {
+    Objects.requireNonNull(sourceData, "sourceData");
     Objects.requireNonNull(retainedClasses, "retainedClasses");
     Objects.requireNonNull(removedServiceProviders, "removedServiceProviders");
     if (targetRelease < MINIMUM_RELEASE) {
       throw new IllegalArgumentException("targetRelease must be positive");
     }
-    if (!java.nio.file.Files.isRegularFile(source)) {
-      throw new IOException("Original dependency is not a regular JAR file: " + source);
-    }
-    final Path sourcePath = source.toAbsolutePath().normalize();
-    final ArtifactDigests sourceDigests = ArtifactDigests.read(sourcePath);
     final Set<String> normalizedRetained = normalizeClassNames(retainedClasses);
     final Set<String> normalizedRemovedProviders = normalizeBinaryNames(removedServiceProviders);
     return assemble(
-        sourcePath, sourceDigests, targetRelease, normalizedRetained, normalizedRemovedProviders);
+        sourceData.sourcePath,
+        sourceData.digests,
+        sourceData.index,
+        targetRelease,
+        normalizedRetained,
+        normalizedRemovedProviders);
   }
 
   private static MultiReleaseArchivePlan assemble(
       final Path sourcePath,
       final ArtifactDigests sourceDigests,
+      final MultiReleaseArchiveInventory.ArchiveIndex index,
       final int targetRelease,
       final Set<String> normalizedRetained,
       final Set<String> normalizedRemovedProviders)
       throws IOException {
-    final MultiReleaseArchiveInventory.ArchiveIndex index =
-        MultiReleaseArchiveInventory.read(sourcePath);
     final Map<String, ClassVariant> rootClasses = index.rootClasses();
     final Map<String, NavigableMap<Integer, ClassVariant>> versionedClasses =
         index.versionedClasses();
@@ -124,10 +193,6 @@ public final class MultiReleaseArchivePlan {
         index.versionedResources();
     final Set<String> versionedFiles = index.versionedFiles();
     final List<String> names = index.names();
-    final Manifest manifest = index.manifest();
-    if (!versionedFiles.isEmpty() && !hasMultiReleaseManifest(manifest)) {
-      throw new IOException("Versioned entries require Multi-Release: true: " + sourcePath);
-    }
     final ClassSelection selection =
         MultiReleaseArchivePlanner.selectClasses(
             rootClasses, versionedClasses, normalizedRetained, targetRelease);
@@ -240,6 +305,25 @@ public final class MultiReleaseArchivePlan {
 
   boolean hasVersionedOutput() {
     return hasVersionedOutput;
+  }
+
+  /** Maps retained physical source class entries to their exact output paths. */
+  @SuppressWarnings("PMD.UseConcurrentHashMap") // The result is frozen before use.
+  public Map<String, String> classEntryProjection() {
+    final Map<String, String> entries = new java.util.HashMap<>();
+    for (final String owner : retainedTargetClasses) {
+      final String selected = selectedClassEntries.get(owner);
+      if (!selected.startsWith(MultiReleaseEntryPath.PREFIX)) {
+        entries.put(selected, selected);
+      }
+    }
+    versionedEntries.forEach(
+        (path, action) -> {
+          if (!action.omitted() && action.outputName().endsWith(".class")) {
+            entries.put(path, action.outputName());
+          }
+        });
+    return Map.copyOf(entries);
   }
 
   /** Returns immutable release and closure facts for plugin candidate analysis. */

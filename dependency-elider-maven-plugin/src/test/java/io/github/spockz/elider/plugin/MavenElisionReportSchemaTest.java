@@ -371,6 +371,84 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void rejectsContradictoryRuntimeCoverageDuringReplay() throws IOException {
+    final ObjectNode selected = descriptorOnlyTrimReport();
+    executionEnvironment(selected).put("targetRelease", 21);
+    final ObjectNode coverage = executionEnvironment(selected).withObject("/runtimeCoverage");
+    coverage.put("compilerTargetExplicit", true);
+    coverage.withArray("analyzedReleases").add(21);
+    coverage
+        .withArray("inputs")
+        .addObject()
+        .put("path", "/runtime/java21")
+        .put("feature", 21)
+        .put("version", "21.0.1")
+        .putNull("vendor")
+        .putNull("implementation")
+        .putNull("operatingSystem")
+        .putNull("architecture")
+        .put("contentIdentity", "a".repeat(64))
+        .putNull("problem")
+        .putNull("linkageProblem");
+
+    final ObjectNode unlinked = selected.deepCopy();
+    final ObjectNode unlinkedCoverage =
+        executionEnvironment(unlinked).withObject("/runtimeCoverage");
+    ((ObjectNode) unlinkedCoverage.withArray("inputs").get(0))
+        .put("linkageProblem", "Module java.sql is missing");
+    final ObjectNode mixedLinkage = selected.deepCopy();
+    executionEnvironment(mixedLinkage)
+        .withObject("/runtimeCoverage")
+        .withArray("inputs")
+        .add(
+            ((ObjectNode) unlinkedCoverage.withArray("inputs").get(0))
+                .deepCopy()
+                .put("path", "/runtime/reduced-java21")
+                .put("contentIdentity", "b".repeat(64)));
+    final ObjectNode missingWarning = selected.deepCopy();
+    executionEnvironment(missingWarning).put("targetRelease", 11);
+    final ObjectNode extraWarning = selected.deepCopy();
+    executionEnvironment(extraWarning)
+        .withObject("/runtimeCoverage")
+        .put("compilerTargetWarning", "Java 21 is not covered");
+    final ObjectNode inspectedButUnlinked = unlinked.deepCopy();
+    executionEnvironment(inspectedButUnlinked)
+        .withObject("/runtimeCoverage")
+        .putArray("analyzedReleases");
+    final ObjectNode overstatedWarning = inspectedButUnlinked.deepCopy();
+    executionEnvironment(overstatedWarning)
+        .put("targetRelease", 11)
+        .withObject("/runtimeCoverage")
+        .put(
+            "compilerTargetWarning",
+            "Compiler target Java 11 is not covered by supplied runtime releases [21] (analysis"
+                + " covers [21]).");
+
+    assertAll(
+        () -> assertInvalidEnvironment("unlinked.json", unlinked, "Analyzed runtime releases"),
+        () ->
+            assertInvalidEnvironment(
+                "mixed-linkage.json", mixedLinkage, "Analyzed runtime releases"),
+        () ->
+            assertInvalidEnvironment(
+                "overstated-warning.json", overstatedWarning, "compiler target coverage warning"),
+        () ->
+            assertInvalidEnvironment(
+                "missing-warning.json", missingWarning, "compiler target coverage warning"),
+        () ->
+            assertInvalidEnvironment(
+                "extra-warning.json", extraWarning, "compiler target coverage warning"),
+        () ->
+            assertThat(
+                    MavenElisionReportWriter.read(
+                            writeReport("unlinked-valid.json", inspectedButUnlinked))
+                        .executionEnvironment()
+                        .runtimeCoverage()
+                        .analyzedReleases())
+                .isEmpty());
+  }
+
+  @Test
   void requiresCanonicalToleratedDuplicateRows() throws IOException {
     final ObjectNode missing = currentReportShapeWithDroppedRow();
     missing.remove("toleratedDuplicates");
@@ -1030,7 +1108,16 @@ final class MavenElisionReportSchemaTest {
     payload.putArray("rawDroppedCoordinates");
     payload.put("programClassesPruned", 0);
     payload.put("uncompressedProgramClassBytesPruned", 0);
-    payload.putObject("executionEnvironment").put("targetRelease", 11).put("runtimeRelease", 25);
+    final ObjectNode runtimeCoverage =
+        payload
+            .putObject("executionEnvironment")
+            .put("targetRelease", 11)
+            .put("runtimeRelease", 25)
+            .putObject("runtimeCoverage")
+            .put("compilerTargetExplicit", false);
+    runtimeCoverage.putNull("compilerTargetWarning");
+    runtimeCoverage.putArray("inputs");
+    runtimeCoverage.putArray("analyzedReleases");
     payload.putArray("trimmedArtifacts");
     payload.put("assumeConventionalJavaSourceLayout", false);
     final ObjectNode policy = payload.putObject("policy");
@@ -1043,6 +1130,7 @@ final class MavenElisionReportSchemaTest {
     payload.putArray("genericFindings");
     payload.putArray("sourceObservations");
     payload.putArray("catalogAdoptions");
+    payload.putArray("forbiddenCodeAssessments");
     payload.set(
         "exclusionReview",
         JSON.valueToTree(

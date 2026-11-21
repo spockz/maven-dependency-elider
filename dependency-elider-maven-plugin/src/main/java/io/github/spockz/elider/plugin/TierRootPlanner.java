@@ -7,6 +7,7 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.TierArchiveProjector.TierContext;
 import io.github.spockz.elider.plugin.TierInventoryReader.Inventory;
 import io.github.spockz.elider.plugin.TierInventoryReader.MultiReleaseCandidateInfo;
+import io.github.spockz.elider.trimmer.JdkApiClassTableReader;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -29,12 +30,12 @@ final class TierRootPlanner {
   /* package */ RootPlan findRoots(
       final Inventory inventory,
       final List<TierContext> projections,
-      final Map<Integer, ClassPool> platforms)
+      final Iterable<ClassPool> platforms)
       throws IOException {
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> requested =
         TrimRootPlanner.validateDiscoveredRoots(
             operation.discoveredRoots(), inventory.snapshots(), inventory.classesBySourcePath());
-    validateStrictRoots(projections, platforms.values());
+    validateStrictRoots(projections, platforms);
     final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots =
         findCandidateSnapshots(
             inventory.passThrough(), projections, inventory.multiReleaseCandidates());
@@ -69,12 +70,20 @@ final class TierRootPlanner {
             .map(Map.Entry::getKey)
             .collect(java.util.stream.Collectors.toSet());
     resolution.addCommonRoots(duplicates, projections, allRoots, reachable);
-    resolution.addCommonRoots(
-        TrimRootPlanner.commonRoots(operation.request()), projections, allRoots, reachable);
+    final Set<String> linkageRoots = TrimRootPlanner.commonRoots(operation.request());
+    resolution.addCommonRoots(linkageRoots, projections, allRoots, reachable);
     resolution.addRequestedRoots(requested, projections, allRoots);
-    resolution.addDynamicRoots(retainedLibraries, projections, allRoots, reachable);
+    linkageRoots.addAll(
+        resolution.addDynamicRoots(retainedLibraries, projections, allRoots, reachable));
     addRequiredTargetRoots(inventory.multiReleaseCandidates(), roots);
-    return new RootPlan(snapshots, candidates, wholeJarPrograms, roots, programRoots, reachable);
+    return new RootPlan(
+        snapshots,
+        candidates,
+        wholeJarPrograms,
+        roots,
+        programRoots,
+        reachable,
+        Set.copyOf(linkageRoots));
   }
 
   private static boolean isPlatformClass(
@@ -91,12 +100,15 @@ final class TierRootPlanner {
   private void validateStrictRoots(
       final List<TierContext> projections, final Iterable<ClassPool> platforms) throws IOException {
     final Set<String> roots = new HashSet<>();
+    final TrimEvidence evidence = operation.request().evidence();
+    final MavenRuntimePlatforms selected = operation.request().runtimePlatforms();
+    if (selected != null) {
+      validateProductionRoots(projections, evidence, selected);
+    }
     operation.request().evidence().sourceRoots().forEach(root -> roots.add(root.replace('/', '.')));
-    operation
-        .request()
-        .evidence()
-        .bytecodeRoots()
-        .forEach(root -> roots.add(root.replace('/', '.')));
+    if (selected == null) {
+      evidence.bytecodeRoots().forEach(root -> roots.add(root.replace('/', '.')));
+    }
     operation.request().policy().explicitRoots().forEach(root -> roots.add(root.replace('/', '.')));
     for (final String root : roots) {
       if (operation.request().evidence().projectOutputClasses().contains(root)
@@ -106,6 +118,51 @@ final class TierRootPlanner {
       if (projections.stream().noneMatch(context -> context.ownerOf(root) != null)) {
         throw new IOException("Required class root has no recognized owner: " + root);
       }
+    }
+  }
+
+  private static void validateProductionRoots(
+      final List<TierContext> projections,
+      final TrimEvidence evidence,
+      final MavenRuntimePlatforms selected)
+      throws MissingRequiredLinkage {
+    final List<String> required =
+        evidence.bytecodeRoots().stream()
+            .map(root -> root.replace('/', '.'))
+            .filter(root -> !evidence.projectOutputClasses().contains(root))
+            .sorted()
+            .toList();
+    for (final TierContext view : projections) {
+      for (final String root : required) {
+        if (view.ownerOf(root) == null
+            && view.jdkClassTable().getClass(root.replace('.', '/')) == null) {
+          throw new MissingRequiredLinkage(
+              "Required class root has no recognized owner: " + root, runtimePath(selected, view));
+        }
+      }
+    }
+  }
+
+  @SuppressWarnings("PMD.CompareObjectsWithEquals") // The view carries the exact frozen table.
+  /* package */ static String runtimePath(
+      final MavenRuntimePlatforms selected, final TierContext view) {
+    final JdkApiClassTableReader reader = new JdkApiClassTableReader();
+    return selected.inputs().stream()
+        .filter(
+            input ->
+                input.platform() != null
+                    && reader.readFrozen(input.platform()) == view.jdkClassTable())
+        .map(input -> input.path().toString())
+        .findFirst()
+        .orElse("Java " + view.release());
+  }
+
+  /** Preserves the missing root for independent policy diagnostics. */
+  /* package */ static final class MissingRequiredLinkage extends IOException {
+    private static final long serialVersionUID = 1L;
+
+    /* package */ MissingRequiredLinkage(final String problem, final String runtime) {
+      super(problem + " in selected runtime " + runtime);
     }
   }
 
@@ -145,7 +202,7 @@ final class TierRootPlanner {
         .filter(snapshot -> !retainJarOwners.contains(snapshot.coordinate()))
         .filter(
             snapshot ->
-                !TierAnalysisViews.classesInTargetTier(snapshot, projections).isEmpty()
+                projections.stream().anyMatch(view -> !view.classesOf(snapshot).isEmpty())
                     || multiRelease.containsKey(snapshot))
         .sorted(TrimCandidatePlanner.artifactSnapshotOrder())
         .toList();
@@ -177,5 +234,6 @@ final class TierRootPlanner {
       Set<ElisionAnalysisModel.ArtifactSnapshot> wholeJarPrograms,
       Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots,
       Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> programRoots,
-      Set<ArtifactCoordinate> reachableArtifacts) {}
+      Set<ArtifactCoordinate> reachableArtifacts,
+      Set<String> linkageRoots) {}
 }

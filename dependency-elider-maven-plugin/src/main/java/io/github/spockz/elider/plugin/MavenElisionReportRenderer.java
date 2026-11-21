@@ -7,13 +7,16 @@ import java.util.List;
 import java.util.Locale;
 
 /** Renders persisted elision summary rows as review text. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.GodClass"})
 final class MavenElisionReportRenderer {
   /** Unit labels used for report byte totals. */
   private static final String[] BYTE_UNITS = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"};
 
   /** Prefix used for nested report rows. */
   private static final String BULLET = "  - ";
+
+  /** Label for values that the saved observation cannot establish. */
+  private static final String UNKNOWN = "unknown";
 
   /** Maximum number of pruned class names printed inline per artifact on console. */
   private static final int MAX_CONSOLE_CLASS_PREVIEW = 5;
@@ -62,6 +65,7 @@ final class MavenElisionReportRenderer {
             + snapshot.generatedAt());
     lines.add("Analysis target JDK release: " + snapshot.executionEnvironment().targetRelease());
     lines.add("Elider runtime JDK release: " + snapshot.executionEnvironment().runtimeRelease());
+    renderRuntimeCoverage(snapshot.executionEnvironment().runtimeCoverage(), lines);
     lines.add(
         "Policy: retained="
             + snapshot.policy().retainedArtifacts()
@@ -112,7 +116,7 @@ final class MavenElisionReportRenderer {
             + snapshot.programClassesPruned()
             + " (uncompressed omitted .class payload bytes: "
             + (snapshot.uncompressedProgramClassBytesPruned() == null
-                ? "unknown"
+                ? UNKNOWN
                 : formatBytes(snapshot.uncompressedProgramClassBytesPruned()))
             + "; excludes module descriptors and archive metadata)");
     for (final MavenElisionReportSnapshot.TrimmedArtifact artifact : snapshot.trimmedArtifacts()) {
@@ -123,7 +127,7 @@ final class MavenElisionReportRenderer {
               + artifact.programClassesPruned()
               + " classes, "
               + (artifact.uncompressedProgramClassBytesPruned() == null
-                  ? "unknown"
+                  ? UNKNOWN
                   : formatBytes(artifact.uncompressedProgramClassBytesPruned())));
       if (predicted && artifact.plannedClasses() != null && !artifact.plannedClasses().isEmpty()) {
         lines.add(
@@ -135,11 +139,106 @@ final class MavenElisionReportRenderer {
         MavenElisionReportGenericRenderer.render(
             snapshot.genericFindings(), snapshot.sourceObservations(), predicted));
     lines.addAll(catalogAdoptionLines(snapshot.catalogAdoptions()));
+    renderForbiddenCode(snapshot.forbiddenCodeAssessments(), lines);
     lines.addAll(ExclusionReviewRenderer.render(snapshot.exclusionReview()));
     lines.addAll(
         MediatedGraphReportRenderer.render(
             snapshot.mediatedGraph(), snapshot.projectGav(), predicted));
     return List.copyOf(lines);
+  }
+
+  private static void renderRuntimeCoverage(
+      final MavenRuntimeCoverage coverage, final List<String> lines) {
+    lines.add("Analyzed runtime releases: " + coverage.analyzedReleases());
+    for (final MavenRuntimeCoverage.Image image : coverage.inputs()) {
+      lines.add(
+          "Runtime input "
+              + image.path()
+              + ": "
+              + (image.problem() == null
+                  ? "Java "
+                      + image.version()
+                      + " ("
+                      + java.util.Objects.toString(image.vendor(), "vendor unknown")
+                      + ")"
+                  : image.problem()));
+      if (image.linkageProblem() != null) {
+        lines.add("    Runtime linkage unavailable: " + image.linkageProblem());
+      }
+    }
+    if (coverage.compilerTargetWarning() != null) {
+      lines.add("WARNING: " + coverage.compilerTargetWarning());
+    }
+  }
+
+  /* package */ static void renderForbiddenCode(
+      final List<ForbiddenCodeAssessment> assessments, final List<String> lines) {
+    assessments.stream()
+        .map(ForbiddenCodeAssessment::status)
+        .max(java.util.Comparator.comparingInt(MavenElisionReportRenderer::policySeverity))
+        .ifPresent(status -> lines.add("Forbidden code overall: " + status));
+    for (final ForbiddenCodeAssessment assessment : assessments) {
+      lines.add(
+          "Forbidden code "
+              + assessment.mode()
+              + " "
+              + assessment.status()
+              + ": "
+              + assessment.cveId()
+              + " "
+              + assessment.symbol()
+              + " in "
+              + assessment.componentKind()
+              + " "
+              + java.util.Objects.toString(assessment.componentIdentity(), UNKNOWN)
+              + " ("
+              + assessment.reason()
+              + "; enforcement "
+              + (assessment.enforcementEnabled() ? "enabled" : "disabled")
+              + ")");
+      lines.add(
+          "    scope="
+              + assessment.versionScope()
+              + ", version="
+              + java.util.Objects.toString(assessment.componentVersion(), UNKNOWN)
+              + ", targetRelease="
+              + java.util.Objects.toString(assessment.targetRelease(), UNKNOWN)
+              + ", applicability="
+              + assessment.versionApplicability()
+              + ", assertsAffected="
+              + assessment.assertsAffected()
+              + ", evidence="
+              + assessment.evidenceKind()
+              + ", complete="
+              + assessment.complete()
+              + ", provider="
+              + java.util.Objects.toString(assessment.provider(), UNKNOWN)
+              + ", provenance="
+              + assessment.provenance()
+              + (assessment.sourceUrl() == null ? "" : ", source=" + assessment.sourceUrl()));
+      for (final ForbiddenCodeAssessment.Match match : assessment.matches()) {
+        lines.add(
+            "    provider="
+                + match.provider()
+                + ", entry="
+                + match.entry()
+                + ", tier="
+                + match.tier()
+                + ", owner="
+                + match.resolvedOwner()
+                + ", descriptors="
+                + match.descriptors());
+      }
+    }
+  }
+
+  private static int policySeverity(final ForbiddenCodeAssessment.Status status) {
+    return switch (status) {
+      case NOT_APPLICABLE -> 0;
+      case PASS -> 1;
+      case UNKNOWN -> 2;
+      case VIOLATION -> 3;
+    };
   }
 
   private static String formatClassPreview(final List<String> classes) {

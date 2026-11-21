@@ -133,19 +133,15 @@ final class TrimRootPlanner {
     return new CommonRootOwners(rootsByArtifact, droppedArtifacts);
   }
 
-  /* package */ static Set<String> dynamicRoots(final TrimRequest request, final Path path)
-      throws IOException {
+  /* package */ static DependencyDynamicRoots.EffectiveRoots dynamicRoots(
+      final TrimRequest request, final Path path) throws IOException {
     final DependencyDynamicRoots.RootScan scan = request.scanInputs().dynamicRootScans().get(path);
     if (scan == null) {
       throw new IOException("Missing dynamic-root scan for full inventory JAR: " + path);
     }
-    final DependencyDynamicRoots.EffectiveRoots effective =
-        scan.effectiveRoots(
-            request.evidence().provenServiceInterfaces(),
-            request.policy().conservativeServiceLoaderRoots());
-    return effective.roots().stream()
-        .map(name -> name.replace('/', '.'))
-        .collect(java.util.stream.Collectors.toSet());
+    return scan.effectiveRoots(
+        request.evidence().provenServiceInterfaces(),
+        request.policy().conservativeServiceLoaderRoots());
   }
 
   /* package */ static TrimAnalysisResult inMemoryResult(

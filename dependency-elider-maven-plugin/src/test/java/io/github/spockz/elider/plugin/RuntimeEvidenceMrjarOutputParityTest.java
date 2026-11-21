@@ -58,7 +58,7 @@ final class RuntimeEvidenceMrjarOutputParityTest
     final Path analyzeReport =
         temporaryDirectory.resolve("elevated-zero-prune-analyze-report.json");
     final Path analyzeSummary = temporaryDirectory.resolve("elevated-zero-prune-analyze.json");
-    final AnalyzeMojo analyze = new AnalyzeMojo();
+    final AnalyzeMojo analyze = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(
         analyze, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession analyzeSession = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());
@@ -78,7 +78,7 @@ final class RuntimeEvidenceMrjarOutputParityTest
 
     final Path elideSummary = temporaryDirectory.resolve("elevated-zero-prune-elide.json");
     final Path elideReport = temporaryDirectory.resolve("elevated-zero-prune-elide-report.json");
-    final ElideMojo elide = new ElideMojo();
+    final ElideMojo elide = ExplicitRuntimeMojoTestSupport.newElideMojo();
     AnalyzeMojoTestFieldSupport.set(
         elide, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession elideSession = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());

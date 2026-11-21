@@ -82,6 +82,29 @@ class MavenPlatformContextHolderTest {
   }
 
   @Test
+  void explicitlyEmptySelectionCannotProvideTheHostClassTable() {
+    final TrimRequest request =
+        new TrimRequest(
+            new MavenProject(),
+            null,
+            null,
+            List.of(),
+            new TrimScanInputs(null, Map.of()),
+            Set.of(),
+            new TrimEvidence(null, Set.of(), Set.of(), Set.of()),
+            new TrimPolicy(List.of(), false, List.of(), false),
+            Optional.empty(),
+            new MavenRuntimePlatforms(List.of()));
+    final int host = Runtime.version().feature();
+    final MultiReleaseTrimContext operation =
+        new MultiReleaseTrimContext(request, Map.of(), Set.of(), host, host);
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> new TierInventoryReader(operation).readJdkClassTables(List.of(host)))
+        .isInstanceOf(java.io.IOException.class)
+        .hasMessageContaining("elide.runtimeInputs");
+  }
+
+  @Test
   @DisplayName("P02: standalone calls receive fresh operation contexts")
   void standaloneCallsDoNotShareContexts() throws Exception {
     try (JdkPlatformContext first = MavenPlatformContextHolder.forOperation(null);

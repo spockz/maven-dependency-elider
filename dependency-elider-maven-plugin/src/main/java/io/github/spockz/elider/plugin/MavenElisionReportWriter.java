@@ -59,6 +59,9 @@ final class MavenElisionReportWriter {
       payload.set(
           "catalogAdoptions",
           MavenElisionReportCatalogAdoptionPayload.write(snapshot.catalogAdoptions()));
+      payload.set(
+          "forbiddenCodeAssessments",
+          ForbiddenCodeAssessmentCodec.write(snapshot.forbiddenCodeAssessments()));
       JSON.writeValue(temporary.toFile(), payload);
       try {
         Files.move(
@@ -105,13 +108,21 @@ final class MavenElisionReportWriter {
           MavenElisionReportGenericPayload.readObservations(payload.get("sourceObservations"));
       final List<MavenVulnerabilityMappingCatalogResolver.Adoption> adoptions =
           MavenElisionReportCatalogAdoptionPayload.read(payload.get("catalogAdoptions"));
+      final List<ForbiddenCodeAssessment> forbidden =
+          ForbiddenCodeAssessmentCodec.read(payload.get("forbiddenCodeAssessments"));
       final com.fasterxml.jackson.databind.node.ObjectNode internal =
           ((com.fasterxml.jackson.databind.node.ObjectNode) payload).deepCopy();
-      internal.remove(List.of("genericFindings", "sourceObservations", "catalogAdoptions"));
+      internal.remove(
+          List.of(
+              "genericFindings",
+              "sourceObservations",
+              "catalogAdoptions",
+              "forbiddenCodeAssessments"));
       snapshot =
           JSON.treeToValue(internal, MavenElisionReportSnapshot.class)
               .withGenericFindings(findings, observations)
-              .withCatalogAdoptions(adoptions);
+              .withCatalogAdoptions(adoptions)
+              .withForbiddenCodeAssessments(forbidden);
     } catch (final IllegalArgumentException exception) {
       throw new IOException(
           "Invalid elision report snapshot: " + absolute + ": " + exception.getMessage(),
@@ -125,6 +136,12 @@ final class MavenElisionReportWriter {
   }
 
   private static void validateMode(final MavenElisionReportSnapshot snapshot) throws IOException {
+    for (final ForbiddenCodeAssessment assessment : snapshot.forbiddenCodeAssessments()) {
+      if ((snapshot.mode() == MavenElisionReportSnapshot.Mode.ANALYSIS)
+          != (assessment.mode() == ForbiddenCodeAssessment.Mode.PREDICTED)) {
+        throw new IOException("Forbidden code assessment mode disagrees with report mode");
+      }
+    }
     for (final GenericFindingAssessment finding : snapshot.genericFindings()) {
       MavenElisionReportProofValidator.validate(finding);
       MavenElisionReportProofValidator.validateForecast(finding, snapshot);

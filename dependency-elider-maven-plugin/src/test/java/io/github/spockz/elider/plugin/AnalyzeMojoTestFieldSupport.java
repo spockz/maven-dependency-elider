@@ -73,8 +73,7 @@ final class AnalyzeMojoTestFieldSupport {
                       analysis.policyIdentity().retainedArtifacts(),
                       analysis.policyIdentity().banishedDependencies(),
                       analysis.policyIdentity().operationFingerprint()),
-                  new TrimExecutionEnvironment(
-                      Runtime.version().feature(), Runtime.version().feature()),
+                  analysis.trimResult().executionEnvironment(),
                   analysis.traceDecision().elidedArtifacts().stream()
                       .filter(
                           coordinate ->
@@ -85,7 +84,8 @@ final class AnalyzeMojoTestFieldSupport {
                       .map(Object::toString)
                       .sorted()
                       .toList(),
-                  graph);
+                  graph,
+                  options.runtimePlatforms());
             });
   }
 

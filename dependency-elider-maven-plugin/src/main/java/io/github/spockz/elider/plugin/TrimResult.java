@@ -77,6 +77,20 @@ public record TrimResult(
         serviceDescriptorChanges);
   }
 
+  /* package */ TrimResult withExecutionEnvironment(final TrimExecutionEnvironment environment) {
+    return new TrimResult(
+        records,
+        multiReleasePassthroughArtifacts,
+        moduleInfoPassthroughArtifacts,
+        configuredPassThroughArtifacts,
+        cacheHits,
+        maximumCacheHitNanos,
+        analysisRuns,
+        environment,
+        toleratedDuplicates,
+        serviceDescriptorChanges);
+  }
+
   /* package */ TrimResult withServiceDescriptorChanges(final List<TrimCandidate> candidates) {
     final Map<ArtifactCoordinate, List<ServiceDescriptorChange>> changes =
         candidates.stream()

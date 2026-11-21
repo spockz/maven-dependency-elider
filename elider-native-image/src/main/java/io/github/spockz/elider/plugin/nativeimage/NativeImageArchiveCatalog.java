@@ -72,14 +72,17 @@ import java.util.jar.JarFile;
       throws IOException {
     if (duplicateResource) {
       boolean found = false;
+      int physicalIndex = 0;
       try (java.util.zip.ZipInputStream stream =
           new java.util.zip.ZipInputStream(java.nio.file.Files.newInputStream(archivePath))) {
         java.util.zip.ZipEntry entry = stream.getNextEntry();
         while (entry != null) {
           if (!entry.isDirectory() && resourcePath.equals(entry.getName())) {
             providers.add(archivePath);
-            NativeImageInput.archiveBytes(archive, resourcePath, kind, stream.readAllBytes())
+            NativeImageInput.archiveBytes(
+                    archive, resourcePath, kind, stream.readAllBytes(), physicalIndex)
                 .readDescriptor(reader, resourcePath, archivePath);
+            physicalIndex++;
             found = true;
           }
           entry = stream.getNextEntry();

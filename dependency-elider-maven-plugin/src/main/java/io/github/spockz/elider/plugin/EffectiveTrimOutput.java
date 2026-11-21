@@ -9,6 +9,9 @@ import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintOptions;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintSnapshot;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectivePublication;
+import io.github.spockz.elider.plugin.TrimGenerationPublisher.OutputCheck;
+import io.github.spockz.elider.plugin.TrimGenerationPublisher.StagedArchive;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -26,7 +29,8 @@ final class EffectiveTrimOutput {
       final int release,
       final int runtimeRelease,
       final JdkPlatformContext platformContext,
-      final EffectiveOutputPlan effectiveOutput)
+      final EffectiveOutputPlan effectiveOutput,
+      final OutputCheck outputCheck)
       throws IOException, MojoFailureException {
     final MavenProject project = request.project();
     final EffectiveCandidatePlanner.PlannedWork planned =
@@ -40,7 +44,7 @@ final class EffectiveTrimOutput {
     final Path manifest = TrimPaths.cacheManifestPath(project);
     final long cacheStart = System.nanoTime();
     final Map<Path, ArtifactDigests> inputDigests =
-        TrimInputDigests.inputDigests(retainedInputPaths);
+        TrimInputDigests.inputDigests(retainedInputPaths, planned.multiReleaseSources());
     final FingerprintSnapshot fingerprint =
         TrimFingerprint.fingerprint(
             work,
@@ -57,7 +61,8 @@ final class EffectiveTrimOutput {
                     request, effectiveOutput, inputDigests),
                 request
                     .cacheProducerIdentity()
-                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity)),
+                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity),
+                request.runtimePlatforms()),
             inputDigests);
     final String completeFingerprint = fingerprint.value();
     final Path generation =
@@ -86,6 +91,14 @@ final class EffectiveTrimOutput {
                     cacheStart))
             : null;
     if (cached != null) {
+      if (outputCheck != null) {
+        outputCheck.check(
+            cached.records().stream()
+                .collect(
+                    java.util.stream.Collectors.toUnmodifiableMap(
+                        ArtifactTrimRecord::coordinate,
+                        record -> new StagedArchive(record.trimmedPath(), record.trimmedPath()))));
+      }
       return cached.withServiceDescriptorChanges(work);
     }
     return TrimGenerationPublisher.publishEffectiveOutputs(
@@ -100,7 +113,9 @@ final class EffectiveTrimOutput {
                 passThrough.multiReleaseCoordinates(),
                 passThrough.moduleInfoCoordinates(),
                 passThrough.configuredCoordinates(),
-                effectiveOutput.analysis().analysisRuns()))
+                effectiveOutput.analysis().analysisRuns(),
+                planned.multiReleaseSources()),
+            outputCheck)
         .withServiceDescriptorChanges(work);
   }
 }

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.objectweb.asm.ClassReader;
@@ -26,37 +27,81 @@ public final class ArchiveClassScanner {
 
   private ArchiveClassScanner() {}
 
-  /** Scans selected internal class names in a JAR without retaining class bytes. */
-  public static Map<String, Set<String>> scanSelected(
-      final Path archivePath, final Set<String> selectedInternalNames) throws IOException {
+  /** Opens a reusable scanner session backed by a single {@link JarFile}. */
+  public static Session open(final Path archivePath) throws IOException {
     if (archivePath == null || !Files.isRegularFile(archivePath)) {
       throw new IOException("Bytecode archive is missing or not a regular file: " + archivePath);
     }
+    final Path scope = archivePath.toAbsolutePath().normalize();
+    return new Session(scope, new JarFile(scope.toFile()));
+  }
+
+  /** Scans selected internal class names in a JAR without retaining class bytes. */
+  public static Map<String, Set<String>> scanSelected(
+      final Path archivePath, final Set<String> selectedInternalNames) throws IOException {
     if (selectedInternalNames == null || selectedInternalNames.isEmpty()) {
+      if (archivePath == null || !Files.isRegularFile(archivePath)) {
+        throw new IOException("Bytecode archive is missing or not a regular file: " + archivePath);
+      }
       return Map.of();
     }
-    final Path scope = archivePath.toAbsolutePath().normalize();
-    final Map<String, Set<String>> byClass = HashMap.newHashMap(selectedInternalNames.size());
-    try (JarFile archive = new JarFile(scope.toFile())) {
-      if (selectedInternalNames.size() <= DIRECT_LOOKUP_THRESHOLD) {
-        scanByLookup(archive, scope, selectedInternalNames, byClass);
-      } else {
-        scanByStream(archive, scope, selectedInternalNames, byClass);
-      }
+    try (Session session = open(archivePath)) {
+      return session.scanSelected(selectedInternalNames);
     }
-    return byClass;
+  }
+
+  /** Reusable archive scanner keeping one {@link JarFile} open across frontier scans. */
+  public static final class Session implements AutoCloseable {
+    /** Normalized archive path for diagnostic messages. */
+    private final Path scope;
+
+    /** Open archive handle shared across scans. */
+    private final JarFile archive;
+
+    private Session(final Path scope, final JarFile archive) {
+      this.scope = scope;
+      this.archive = archive;
+    }
+
+    /** Scans selected base internal class names in the open archive. */
+    public Map<String, Set<String>> scanSelected(final Set<String> selectedInternalNames)
+        throws IOException {
+      return scanSelected(selectedInternalNames, null);
+    }
+
+    /** Also reports each selected class's direct supertypes as internal names. */
+    public Map<String, Set<String>> scanSelected(
+        final Set<String> selectedInternalNames, final BiConsumer<String, String> supertypes)
+        throws IOException {
+      if (selectedInternalNames == null || selectedInternalNames.isEmpty()) {
+        return Map.of();
+      }
+      final Map<String, Set<String>> byClass = HashMap.newHashMap(selectedInternalNames.size());
+      if (selectedInternalNames.size() <= DIRECT_LOOKUP_THRESHOLD) {
+        scanByLookup(archive, scope, selectedInternalNames, byClass, supertypes);
+      } else {
+        scanByStream(archive, scope, selectedInternalNames, byClass, supertypes);
+      }
+      return byClass;
+    }
+
+    @Override
+    public void close() throws IOException {
+      archive.close();
+    }
   }
 
   private static void scanByLookup(
       final JarFile archive,
       final Path scope,
       final Set<String> selectedInternalNames,
-      final Map<String, Set<String>> byClass)
+      final Map<String, Set<String>> byClass,
+      final BiConsumer<String, String> supertypes)
       throws IOException {
     for (final String internalName : selectedInternalNames) {
       final JarEntry entry = archive.getJarEntry(internalName + CLASS_SUFFIX);
       if (entry != null && !entry.isDirectory()) {
-        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry));
+        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry, supertypes));
       }
     }
   }
@@ -65,31 +110,30 @@ public final class ArchiveClassScanner {
       final JarFile archive,
       final Path scope,
       final Set<String> selectedInternalNames,
-      final Map<String, Set<String>> byClass)
+      final Map<String, Set<String>> byClass,
+      final BiConsumer<String, String> supertypes)
       throws IOException {
     for (final JarEntry entry : archive.stream().toList()) {
-      if (entry.isDirectory() || !entry.getName().endsWith(CLASS_SUFFIX)) {
+      final String name = entry.getName();
+      if (entry.isDirectory()
+          || !name.endsWith(CLASS_SUFFIX)
+          || name.startsWith(MultiReleaseEntryPath.PREFIX)) {
         continue;
       }
-      final String logicalName = logicalClassEntryName(entry.getName());
-      final String internalName =
-          logicalName.substring(0, logicalName.length() - CLASS_SUFFIX.length());
+      final String internalName = name.substring(0, name.length() - CLASS_SUFFIX.length());
       if (selectedInternalNames.contains(internalName)) {
-        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry));
+        byClass.put(internalName, scanEntryNonDebug(archive, scope, entry, supertypes));
       }
     }
-  }
-
-  private static String logicalClassEntryName(final String entryName) throws IOException {
-    if (!entryName.startsWith(MultiReleaseEntryPath.PREFIX)) {
-      return entryName;
-    }
-    return MultiReleaseEntryPath.parse(entryName, false).logicalName();
   }
 
   @SuppressWarnings("PMD.AvoidCatchingGenericException")
   private static Set<String> scanEntryNonDebug(
-      final JarFile archive, final Path scope, final JarEntry entry) throws IOException {
+      final JarFile archive,
+      final Path scope,
+      final JarEntry entry,
+      final BiConsumer<String, String> supertypes)
+      throws IOException {
     final Set<String> references = new HashSet<>();
     try (InputStream input = archive.getInputStream(entry)) {
       new ClassReader(input)
@@ -101,7 +145,8 @@ public final class ArchiveClassScanner {
                     if (kind != AsmClassReferenceVisitor.ReferenceKind.DEBUG_METADATA) {
                       references.add(TraceData.normalizeToDot(internalName));
                     }
-                  }),
+                  },
+                  supertypes),
               0);
     } catch (final RuntimeException exception) {
       throw new IOException(

@@ -48,6 +48,7 @@ final class TrimRequestFactory {
             trim.workers(),
             trim.duplicateClasses(),
             trim.passThroughOnUnresolved()),
-        trim.cacheProducerResolution().identity());
+        trim.cacheProducerResolution().identity(),
+        options.runtimePlatforms());
   }
 }

@@ -105,7 +105,7 @@ final class AnalyzePassThroughLinkageTest {
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Path trace = tempDir.resolve("trace.lst");
     Files.writeString(trace, OWNER.replace('/', '.') + "\nsibling.Entry\n");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AnalyzeMojo mojo = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(mojo, "trimJars", true);

@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
@@ -43,6 +44,7 @@ final class NoTrimMultiReleaseRootTest {
   private static final String MRJAR = "mrjar";
   private static final String UNUSED = "unused";
   private static final String BASE_CLASS = "mrjar/Base";
+  private static final String BASE_BINARY_NAME = "mrjar.Base";
   private static final String JAVA22_ONLY = "mrjar/Java22Only";
   private static final String HELPER = "unused/Helper";
   @TempDir private Path tempDir;
@@ -71,6 +73,87 @@ final class NoTrimMultiReleaseRootTest {
                     MavenBanAuditTestSupport.coordinate(MRJAR),
                     MavenBanAuditTestSupport.coordinate(UNUSED)),
         () -> assertThat(effective.effectiveDecision().elidedArtifacts()).isEmpty());
+  }
+
+  @Test
+  void scansEachArchiveViewOnlyOnceEvenWithTwoPlatformsForOneRelease() throws Exception {
+    final String object = "java/lang/Object";
+    final String requiredInterface = "java/sql/Wrapper";
+    final Set<String> references = Set.of(requiredInterface);
+    final Path host = Path.of(System.getProperty("java.home"));
+    final MavenRuntimePlatforms selected =
+        MavenRuntimePlatforms.inspect(tempDir, List.of(host.toString()), null);
+    final Path programPath =
+        writeMultiReleaseJar(
+            tempDir.resolve("program.jar"),
+            Map.of(BASE_CLASS, classBytes(BASE_CLASS, HELPER, Opcodes.ACC_PUBLIC, references)),
+            Map.of());
+    final Path helperPath =
+        writeMultiReleaseJar(
+            tempDir.resolve("helper.jar"), Map.of(HELPER, classBytes(HELPER, null)), Map.of());
+    final ElisionAnalysisModel.ArtifactSnapshot program =
+        new ElisionAnalysisModel.ArtifactSnapshot(
+            null, MavenBanAuditTestSupport.coordinate(MRJAR), programPath);
+    final ElisionAnalysisModel.ArtifactSnapshot helper =
+        new ElisionAnalysisModel.ArtifactSnapshot(
+            null, MavenBanAuditTestSupport.coordinate(UNUSED), helperPath);
+    final int release = Runtime.version().feature();
+    final proguard.classfile.ClassPool full = new proguard.classfile.ClassPool();
+    full.addClass(new proguard.classfile.LibraryClass(0, object, null));
+    full.addClass(new proguard.classfile.LibraryClass(0, requiredInterface, object));
+    final proguard.classfile.ClassPool reduced = new proguard.classfile.ClassPool();
+    reduced.addClass(new proguard.classfile.LibraryClass(0, object, null));
+    final TierArchiveProjector.TierContext view =
+        new TierArchiveProjector.TierContext(
+            release,
+            release,
+            Map.of(),
+            Map.of(program, programPath, helper, helperPath),
+            Map.of(program, Set.of(BASE_BINARY_NAME), helper, Set.of("unused.Helper")),
+            Map.of(BASE_BINARY_NAME, List.of(program), "unused.Helper", List.of(helper)),
+            Map.of(),
+            Map.of(),
+            full);
+    final TrimRequest request =
+        new TrimRequest(
+            project(),
+            null,
+            null,
+            List.of(program, helper),
+            new TrimScanInputs(null, Map.of()),
+            Set.of(program.coordinate()),
+            new TrimEvidence(
+                io.github.spockz.elider.model.TraceData.empty(),
+                Set.of(),
+                Set.of(BASE_BINARY_NAME),
+                Set.of()),
+            new TrimPolicy(List.of(), false, List.of(), false),
+            java.util.Optional.empty(),
+            selected);
+    final MultiReleaseTrimContext operation =
+        new MultiReleaseTrimContext(request, Map.of(), Set.of(), release, release);
+    final TierRootPlanner.RootPlan roots =
+        new TierRootPlanner.RootPlan(
+            List.of(),
+            Set.of(),
+            Set.of(program),
+            Map.of(),
+            Map.of(),
+            Set.of(),
+            Set.of(BASE_BINARY_NAME));
+    final TierClosureAnalyzer.ClosureResult closure =
+        NoTrimClosureAnalyzer.analyze(operation, List.of(view, view.withPlatform(full)), roots);
+    assertAll(
+        () -> assertThat(closure.reachableArtifacts()).containsExactly(helper.coordinate()),
+        () -> assertThat(closure.analysisRuns()).isEqualTo(1),
+        () ->
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                    () ->
+                        NoTrimClosureAnalyzer.analyze(
+                            operation, List.of(view, view.withPlatform(reduced)), roots))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("java.sql.Wrapper")
+                .hasMessageContaining(BASE_BINARY_NAME));
   }
 
   private EffectiveAnalysis runNoTrimAnalysis(final boolean baseReferencesUnused)
@@ -182,8 +265,14 @@ final class NoTrimMultiReleaseRootTest {
   }
 
   private static byte[] classBytes(final String name, final String reference, final int access) {
+    return classBytes(name, reference, access, Set.of());
+  }
+
+  private static byte[] classBytes(
+      final String name, final String reference, final int access, final Set<String> interfaces) {
     final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V21, access, name, null, "java/lang/Object", null);
+    writer.visit(
+        Opcodes.V21, access, name, null, "java/lang/Object", interfaces.toArray(String[]::new));
     if (reference != null) {
       final MethodVisitor method =
           writer.visitMethod(

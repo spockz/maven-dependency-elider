@@ -57,10 +57,24 @@ public final class NativeImageDynamicRoots {
       final Set<Path> resourceProviders,
       final Set<NativeImageConsumedInput> consumedInputs)
       throws IOException {
-    final Properties properties = new Properties();
     try (InputStream input = archive.getInputStream(propertiesEntry)) {
-      properties.load(input);
+      return readNativeImagePropertiesDetailed(
+          archive, propertiesEntry, input, roots, scanContext, resourceProviders, consumedInputs);
     }
+  }
+
+  /* package */
+  static PropertiesResult readNativeImagePropertiesDetailed(
+      final JarFile archive,
+      final JarEntry propertiesEntry,
+      final InputStream input,
+      final Set<String> roots,
+      final NativeImageScanContext scanContext,
+      final Set<Path> resourceProviders,
+      final Set<NativeImageConsumedInput> consumedInputs)
+      throws IOException {
+    final Properties properties = new Properties();
+    properties.load(input);
     if (properties.size() != 1 || !properties.containsKey("Args")) {
       throw new IOException("Unsupported native-image properties in " + propertiesEntry.getName());
     }

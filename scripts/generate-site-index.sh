@@ -33,6 +33,9 @@ echo "Generated site index at $OUTPUT_FILE from README.md"
 FAQ_OUTPUT_FILE="$OUTPUT_DIR/faq.md"
 sed \
   -e 's|(\.\./dependency-elider-maven-plugin/src/site/markdown/\([^)]*\)\.md)|(\1.html)|g' \
+  -e 's|(\.\./dependency-elider-maven-plugin/src/site/markdown/\([^#)]*\)\.md#\([^)]*\))|(\1.html#\2)|g' \
+  -e 's|(contributor-decisions-and-faq\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md)|g' \
+  -e 's|(\.\./dependency-elider-maven-plugin/src/test/\([^)]*\))|(https://github.com/spockz/maven-dependency-elider/blob/main/dependency-elider-maven-plugin/src/test/\1)|g' \
   -e 's|(adr/\([^)]*\)\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/adr/\1.md)|g' \
   -e 's|(research/\([^)]*\)\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/research/\1.md)|g' \
   -e 's|(\.\./elider-core/\([^)]*\))|(https://github.com/spockz/maven-dependency-elider/blob/main/elider-core/\1)|g' \

@@ -31,12 +31,7 @@ final class TierAnalysisPreparer {
     this.operation = operation;
   }
 
-  /* package */ record PreparedContexts(
-      List<TierContext> contexts, List<TrimAnalysisSession> sessions) {
-    /* package */ void clearSnapshots() {
-      sessions.forEach(TrimAnalysisSession::clearSnapshots);
-    }
-  }
+  /* package */ record PreparedContexts(List<TierContext> contexts, TrimAnalysisSession session) {}
 
   /* package */ PreparedContexts prepareContexts(
       final Inventory inventory,
@@ -64,7 +59,7 @@ final class TierAnalysisPreparer {
               unchangedClasses,
               session));
     }
-    return new PreparedContexts(List.copyOf(contexts), List.of(session));
+    return new PreparedContexts(List.copyOf(contexts), session);
   }
 
   private Set<String> skippedIdentities(final TrimPassThroughPlan plan) {
@@ -175,8 +170,9 @@ final class TierAnalysisPreparer {
         candidateSnapshots.stream()
             .filter(
                 snapshot ->
-                    !(candidates.get(snapshot).isMultiRelease()
-                        && projection.release() > operation.targetRelease()))
+                    operation.request().runtimePlatforms() != null
+                        || !(candidates.get(snapshot).isMultiRelease()
+                            && projection.release() > operation.targetRelease()))
             .filter(snapshot -> !projection.classesOf(snapshot).isEmpty())
             .sorted(TrimCandidatePlanner.artifactSnapshotOrder())
             .toList();

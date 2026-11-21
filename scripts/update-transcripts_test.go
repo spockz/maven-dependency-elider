@@ -41,6 +41,33 @@ func TestNormalizeOutputDoesNotPinTheEliderRuntimeRelease(t *testing.T) {
 	}
 }
 
+func TestNormalizeForbiddenCodeTranscriptKeepsPolicyFactsWithoutRuntimeIdentity(t *testing.T) {
+	output := "[INFO] Analysis target JDK release: 25\n" +
+		"[INFO] Elider runtime JDK release: 25\n" +
+		"[INFO] Analyzed runtime releases: [25]\n" +
+		"[INFO] Runtime input /jdk/home: Java 25.0.1+2 (Example Runtime)\n" +
+		"[INFO] Forbidden code OBSERVED UNKNOWN: CVE-2026-114938 java.util.Base64.Decoder#decode(byte[]) in JAVA_RUNTIME Vendor (build) (Available runtime evidence does not establish method or class reachability; enforcement enabled)\n" +
+		"[INFO]     scope=(,), version=25.0.1+2, targetRelease=25, applicability=APPLICABLE, assertsAffected=false, evidence=RUNTIME_REACHABILITY, complete=false, provider=/jdk/home, provenance=pom\n" +
+		"[INFO] Forbidden code OBSERVED VIOLATION: CVE-2026-114938 java.util.Base64.Decoder#decode(byte[]) in JAVA_RUNTIME Vendor (build) (Exact invocation found in effective bytecode at /repo/.scratch/evidence/classes!app/Main.class; enforcement disabled)\n" +
+		"[INFO]     scope=(,), version=25.0.1+2, targetRelease=25, applicability=APPLICABLE, assertsAffected=false, evidence=DIRECT_RUNTIME_CALL, complete=false, provider=/jdk/home, provenance=pom\n" +
+		"[INFO]     scope=[1.7,1.18), version=1.17, targetRelease=25, applicability=APPLICABLE, assertsAffected=true, evidence=STAGED_ARCHIVE_DECLARATIONS, complete=true, provider=/repo/.scratch/evidence/elided-artifacts/.generations/" + strings.Repeat("b", 64) + "/trimmed.jar, provenance=pom\n"
+	got := normalizeOutput(output, "/repo", "/repo/.scratch/evidence")
+	want := []string{
+		"[INFO] Analysis target JDK release: <RUNTIME_RELEASE>",
+		"[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>",
+		"[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]",
+		"[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)",
+		"[INFO] Forbidden code OBSERVED UNKNOWN: CVE-2026-114938 java.util.Base64.Decoder#decode(byte[]) in JAVA_RUNTIME <RUNTIME_IDENTITY> (Available runtime evidence does not establish method or class reachability; enforcement enabled)",
+		"[INFO]     scope=(,), version=<RUNTIME_VERSION>, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=false, evidence=RUNTIME_REACHABILITY, complete=false, provider=<RUNTIME_IMAGE>, provenance=pom",
+		"[INFO] Forbidden code OBSERVED VIOLATION: CVE-2026-114938 java.util.Base64.Decoder#decode(byte[]) in JAVA_RUNTIME <RUNTIME_IDENTITY> (Exact invocation found in effective bytecode at <TEMP_DIR>/classes!app/Main.class; enforcement disabled)",
+		"[INFO]     scope=(,), version=<RUNTIME_VERSION>, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=false, evidence=DIRECT_RUNTIME_CALL, complete=false, provider=<RUNTIME_IMAGE>, provenance=pom",
+		"[INFO]     scope=[1.7,1.18), version=1.17, targetRelease=<RUNTIME_RELEASE>, applicability=APPLICABLE, assertsAffected=true, evidence=STAGED_ARCHIVE_DECLARATIONS, complete=true, provider=<TEMP_DIR>/elided-artifacts/.generations/<TRIM_GENERATION>/trimmed.jar, provenance=pom",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized forbidden-code transcript = %#v, want %#v", got, want)
+	}
+}
+
 func TestNormalizeOutputRedactsPathBoundProofInventoryFingerprints(t *testing.T) {
 	output := "[INFO]     Prerequisite proof evidence: final inventory " + strings.Repeat("a", 64) + "\n"
 	got := normalizeOutput(output, "/repo", "/repo/.scratch/evidence")

@@ -21,9 +21,33 @@ record TrimRequest(
     Set<ArtifactCoordinate> retainedCoordinates,
     TrimEvidence evidence,
     TrimPolicy policy,
-    Optional<CacheProducerIdentity> cacheProducerIdentity) {
+    Optional<CacheProducerIdentity> cacheProducerIdentity,
+    MavenRuntimePlatforms runtimePlatforms) {
   TrimRequest {
     java.util.Objects.requireNonNull(cacheProducerIdentity, "cacheProducerIdentity");
+  }
+
+  /* package */ TrimRequest(
+      final MavenProject project,
+      final MavenSession session,
+      final AnalysisEnvironment environment,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> candidates,
+      final TrimScanInputs scanInputs,
+      final Set<ArtifactCoordinate> retainedCoordinates,
+      final TrimEvidence evidence,
+      final TrimPolicy policy,
+      final Optional<CacheProducerIdentity> cacheProducerIdentity) {
+    this(
+        project,
+        session,
+        environment,
+        candidates,
+        scanInputs,
+        retainedCoordinates,
+        evidence,
+        policy,
+        cacheProducerIdentity,
+        null);
   }
 
   /* package */ TrimRequest(

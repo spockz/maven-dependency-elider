@@ -18,6 +18,7 @@
 
     <properties>
         <elide.mode>baseline</elide.mode>
+        <elide.runtimeInputs>${java.home}</elide.runtimeInputs>
         <elide.skip>true</elide.skip>
         <elider.verifyElision>false</elider.verifyElision>
     </properties>

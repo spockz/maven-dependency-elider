@@ -36,7 +36,7 @@ final class RuntimeEvidenceClasspathOnlyModuleOutputTest
     final Path trace = temporaryDirectory.resolve("classpath-only-module.lst");
     Files.writeString(trace, "closure/a/Entry\n");
     final Path analyzeSummary = temporaryDirectory.resolve("classpath-only-module-analyze.json");
-    final AnalyzeMojo analyze = new AnalyzeMojo();
+    final AnalyzeMojo analyze = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(
         analyze, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession analyzeSession = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());
@@ -59,7 +59,7 @@ final class RuntimeEvidenceClasspathOnlyModuleOutputTest
     final MavenElisionReportSnapshot prediction = MavenElisionReportWriter.read(analyzeSummary);
 
     final Path elideSummary = temporaryDirectory.resolve("classpath-only-module-elide.json");
-    final ElideMojo elide = new ElideMojo();
+    final ElideMojo elide = ExplicitRuntimeMojoTestSupport.newElideMojo();
     AnalyzeMojoTestFieldSupport.set(
         elide, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession elideSession = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());

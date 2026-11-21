@@ -5,8 +5,8 @@ package io.github.spockz.elider.plugin;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.StreamSupport;
 
@@ -67,8 +67,9 @@ final class MavenElisionReportJsonPayloadShape {
 
   /* default */ static Set<String> fieldNames(final JsonNode node) {
     final Set<String> names = new HashSet<>();
-    final Iterator<String> fields = node.fieldNames();
-    fields.forEachRemaining(names::add);
+    for (final Map.Entry<String, JsonNode> entry : node.properties()) {
+      names.add(entry.getKey());
+    }
     return names;
   }
 

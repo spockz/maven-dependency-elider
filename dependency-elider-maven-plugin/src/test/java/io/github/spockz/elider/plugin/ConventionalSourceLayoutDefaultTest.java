@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 class ConventionalSourceLayoutDefaultTest {
   /** Descriptor parameter shared by the elide and analyze goals. */
-  private static final String PARAMETER = "assumeConventionalJavaSourceLayout";
+  private static final String SOURCE_LAYOUT_PARAMETER = "assumeConventionalJavaSourceLayout";
 
   @Test
   void elideAndAnalyzeDefaultToConventionalSourceLayoutAssumption()
@@ -30,13 +30,26 @@ class ConventionalSourceLayoutDefaultTest {
     assertAll(
         "both source-attribution goals default to the conventional Java layout",
         () ->
-            assertThat(parameterDefault(descriptor, "elide"))
+            assertThat(parameter(descriptor, "elide", SOURCE_LAYOUT_PARAMETER).getDefaultValue())
                 .as("elide goal parameter default")
                 .isEqualTo("true"),
         () ->
-            assertThat(parameterDefault(descriptor, "analyze"))
+            assertThat(parameter(descriptor, "analyze", SOURCE_LAYOUT_PARAMETER).getDefaultValue())
                 .as("analyze goal parameter default")
                 .isEqualTo("true"));
+  }
+
+  @Test
+  void bothGoalsBindTheDefaultOffForbiddenCodeProperty()
+      throws IOException, PlexusConfigurationException {
+    final PluginDescriptor descriptor = readDescriptor();
+    for (final String goal : java.util.List.of("analyze", "elide")) {
+      final Parameter setting = parameter(descriptor, goal, "failOnForbiddenCode");
+      assertAll(
+          goal,
+          () -> assertThat(setting.getDefaultValue()).isEqualTo("false"),
+          () -> assertThat(setting.getExpression()).isEqualTo("${elide.failOnForbiddenCode}"));
+    }
   }
 
   private static PluginDescriptor readDescriptor()
@@ -51,15 +64,13 @@ class ConventionalSourceLayoutDefaultTest {
     }
   }
 
-  private static String parameterDefault(final PluginDescriptor descriptor, final String goal) {
+  private static Parameter parameter(
+      final PluginDescriptor descriptor, final String goal, final String name) {
     return descriptor.getMojos().stream()
         .filter(mojo -> goal.equals(mojo.getGoal()))
-        .map(mojo -> mojo.getParameterMap().get(PARAMETER))
-        .filter(Objects::nonNull)
-        .map(Parameter::getDefaultValue)
+        .map(mojo -> mojo.getParameterMap().get(name))
         .filter(Objects::nonNull)
         .findFirst()
-        .orElseThrow(
-            () -> new AssertionError("Missing default for " + PARAMETER + " on goal " + goal));
+        .orElseThrow(() -> new AssertionError("Missing parameter " + name + " on goal " + goal));
   }
 }

@@ -166,6 +166,8 @@ final class DependencyDynamicRootsTest {
     assertThat(conservative.unprovenConservativeRoots())
         .containsExactlyInAnyOrder(
             "org.example.spi.OtherService", "org.example.spi.OtherServiceImpl");
+    assertThat(conservative.provenServiceRoots())
+        .containsExactlyInAnyOrder(MY_SERVICE, "org.example.spi.MyServiceImpl");
 
     // Case 2: MyService is proven, OtherService is not. Fallback disabled.
     final DependencyDynamicRoots.EffectiveRoots nonConservative =

@@ -17,9 +17,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.maven.project.MavenProject;
 
 /** Plans effective candidates from their validated per-artifact root evidence. */
+@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class EffectiveCandidatePlanner {
   private EffectiveCandidatePlanner() {}
 
@@ -27,25 +29,41 @@ final class EffectiveCandidatePlanner {
       MavenProject project,
       Map<ArtifactFileRef, Set<String>> classes,
       EffectiveOutputPlan output,
-      Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots) {}
+      Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots,
+      Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources) {}
 
   private record CandidateClasses(Set<String> names, boolean multiRelease, int logicalCount) {}
 
-  /* package */ record PlannedWork(TrimPassThroughPlan passThrough, List<TrimCandidate> work) {}
+  /* package */ record PlannedWork(
+      TrimPassThroughPlan passThrough,
+      List<TrimCandidate> work,
+      Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources) {
+    PlannedWork {
+      multiReleaseSources = Map.copyOf(multiReleaseSources);
+    }
+
+    /* package */ PlannedWork(
+        final TrimPassThroughPlan passThrough, final List<TrimCandidate> work) {
+      this(passThrough, work, Map.of());
+    }
+  }
 
   /* package */ static PlannedWork planWork(
       final TrimRequest request, final EffectiveOutputPlan effectiveOutput) throws IOException {
     final TrimPassThroughPlan passThrough = TrimPassThroughPlanner.passThroughPlan(request);
+    final Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources =
+        new ConcurrentHashMap<>();
     final CandidatePlan plan =
         effectiveCandidatePlan(
             request.project(),
             passThrough.retainedLibraries(),
             passThrough.retained(),
             request.scanInputs().classIndex().classesByArtifact(),
-            effectiveOutput);
+            effectiveOutput,
+            multiReleaseSources);
     TrimCandidatePlanner.assignEffectiveAnalyses(plan, effectiveOutput.analysis());
     ServiceProviderTrimInventory.planDescriptorOutputs(effectiveOutput, plan.work());
-    return new PlannedWork(passThrough, plan.work());
+    return new PlannedWork(passThrough, plan.work(), multiReleaseSources);
   }
 
   /* package */ static CandidatePlan effectiveCandidatePlan(
@@ -55,12 +73,25 @@ final class EffectiveCandidatePlanner {
       final Map<ArtifactFileRef, Set<String>> classes,
       final EffectiveOutputPlan output)
       throws IOException {
+    return effectiveCandidatePlan(
+        project, libraries, retained, classes, output, new ConcurrentHashMap<>());
+  }
+
+  private static CandidatePlan effectiveCandidatePlan(
+      final MavenProject project,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> libraries,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> retained,
+      final Map<ArtifactFileRef, Set<String>> classes,
+      final EffectiveOutputPlan output,
+      final Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources)
+      throws IOException {
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots =
         TrimRootPlanner.validateDiscoveredRoots(
             output.roots(),
             TrimCandidatePlanner.fullJarInventory(libraries),
             TrimCandidatePlanner.classesByPath(classes));
-    final CandidateInputs inputs = new CandidateInputs(project, classes, output, roots);
+    final CandidateInputs inputs =
+        new CandidateInputs(project, classes, output, roots, multiReleaseSources);
     final Set<Path> outputs = new HashSet<>();
     final List<TrimCandidate> work = new ArrayList<>();
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot :
@@ -151,15 +182,24 @@ final class EffectiveCandidatePlanner {
       return new CandidateClasses(classes, false, classes.size());
     }
     final int release = inputs.output().analysis().targetRelease();
-    final Path projection =
-        MultiReleaseLibraryProjection.create(
-            snapshot.filePath(),
-            snapshot.coordinate(),
-            TrimPaths.analysisLibraryDirectory(inputs.project()),
-            release);
-    final Set<String> classes = TrimPaths.classNames(projection);
+    final Path normalizedSource = snapshot.filePath().toAbsolutePath().normalize();
+    MultiReleaseArchivePlan.SourceData sourceData =
+        inputs.multiReleaseSources().get(normalizedSource);
+    if (sourceData == null) {
+      sourceData = inputs.output().analysis().multiReleaseSources().get(normalizedSource);
+      if (sourceData == null) {
+        MultiReleaseWorkObserver.recordSourceInspected(normalizedSource);
+        sourceData = MultiReleaseArchivePlan.inspectSource(normalizedSource);
+      }
+      inputs.multiReleaseSources().put(normalizedSource, sourceData);
+    }
     final MultiReleaseArchivePlan initial =
-        MultiReleaseArchivePlan.create(snapshot.filePath(), release, Set.of(), Set.of());
-    return new CandidateClasses(classes, true, initial.pluginView().logicalClassCount());
+        MultiReleaseArchivePlan.create(sourceData, release, Set.of(), Set.of());
+    final MultiReleaseArchivePlan.PluginView view = initial.pluginView();
+    final Set<String> classes = new HashSet<>(view.targetPresentClasses().size());
+    for (final String internalName : view.targetPresentClasses()) {
+      classes.add(internalName.replace('/', '.'));
+    }
+    return new CandidateClasses(Set.copyOf(classes), true, view.logicalClassCount());
   }
 }

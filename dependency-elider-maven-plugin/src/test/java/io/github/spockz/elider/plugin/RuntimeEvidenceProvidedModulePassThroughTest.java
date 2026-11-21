@@ -35,7 +35,7 @@ final class RuntimeEvidenceProvidedModulePassThroughTest
     Files.writeString(trace, "closure/a/Entry\n");
 
     final Path analyzeSummary = temporaryDirectory.resolve("provided-module-analyze.json");
-    final AnalyzeMojo analyze = new AnalyzeMojo();
+    final AnalyzeMojo analyze = ExplicitRuntimeMojoTestSupport.newAnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(
         analyze, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession analyzeSession = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());
@@ -56,7 +56,7 @@ final class RuntimeEvidenceProvidedModulePassThroughTest
     final MavenElisionReportSnapshot prediction = MavenElisionReportWriter.read(analyzeSummary);
 
     final Path elideSummary = temporaryDirectory.resolve("provided-module-elide.json");
-    final ElideMojo elide = new ElideMojo();
+    final ElideMojo elide = ExplicitRuntimeMojoTestSupport.newElideMojo();
     AnalyzeMojoTestFieldSupport.set(
         elide, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession elideSession = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());

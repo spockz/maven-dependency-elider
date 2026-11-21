@@ -5,12 +5,15 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
+import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
 /** Freezes closure evidence before output planning. */
+@SuppressWarnings("PMD.ExcessiveParameterList")
 record TrimAnalysisResult(
     Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> candidateAnalyses,
     Map<ArtifactCoordinate, Set<String>> candidateRoots,
@@ -23,7 +26,8 @@ record TrimAnalysisResult(
     Map<ArtifactCoordinate, Set<String>> upperTierClasses,
     Set<String> passThroughIdentities,
     Map<ArtifactCoordinate, Set<String>> liveProgramClasses,
-    Set<ArtifactCoordinate> forcedUnchangedCoordinates) {
+    Set<ArtifactCoordinate> forcedUnchangedCoordinates,
+    Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources) {
   TrimAnalysisResult {
     candidateAnalyses = TrimRootPlanner.immutableAnalysisMap(candidateAnalyses);
     candidateRoots = TrimRootPlanner.immutableSetMap(candidateRoots);
@@ -35,6 +39,7 @@ record TrimAnalysisResult(
     liveProgramClasses = TrimRootPlanner.immutableSetMap(liveProgramClasses);
     forcedUnchangedCoordinates =
         java.util.Collections.unmodifiableSet(new TreeSet<>(forcedUnchangedCoordinates));
+    multiReleaseSources = Map.copyOf(multiReleaseSources);
   }
 
   /* package */ TrimAnalysisResult(
@@ -59,7 +64,37 @@ record TrimAnalysisResult(
         upperTierClasses,
         Set.of(),
         Map.of(),
-        Set.of());
+        Set.of(),
+        Map.of());
+  }
+
+  /* package */ TrimAnalysisResult(
+      final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> candidateAnalyses,
+      final Map<ArtifactCoordinate, Set<String>> candidateRoots,
+      final Set<ArtifactCoordinate> reachableArtifacts,
+      final int analysisRuns,
+      final int targetRelease,
+      final int runtimeRelease,
+      final List<String> platformIdentities,
+      final List<Integer> analyzedTiers,
+      final Map<ArtifactCoordinate, Set<String>> upperTierClasses,
+      final Set<String> passThroughIdentities,
+      final Map<ArtifactCoordinate, Set<String>> liveProgramClasses,
+      final Set<ArtifactCoordinate> forcedUnchangedCoordinates) {
+    this(
+        candidateAnalyses,
+        candidateRoots,
+        reachableArtifacts,
+        analysisRuns,
+        targetRelease,
+        runtimeRelease,
+        platformIdentities,
+        analyzedTiers,
+        upperTierClasses,
+        passThroughIdentities,
+        liveProgramClasses,
+        forcedUnchangedCoordinates,
+        Map.of());
   }
 
   /* package */ TrimAnalysisResult withPassThroughIdentities(
@@ -76,7 +111,8 @@ record TrimAnalysisResult(
         upperTierClasses,
         passThroughIdentities,
         liveProgramClasses,
-        forcedUnchangedCoordinates);
+        forcedUnchangedCoordinates,
+        multiReleaseSources);
   }
 
   /* package */ TrimAnalysisResult withLiveProgramClasses(
@@ -93,7 +129,8 @@ record TrimAnalysisResult(
         upperTierClasses,
         passThroughIdentities,
         liveProgramClasses,
-        forcedUnchangedCoordinates);
+        forcedUnchangedCoordinates,
+        multiReleaseSources);
   }
 
   /* package */ TrimAnalysisResult withForcedUnchangedCoordinates(
@@ -110,6 +147,25 @@ record TrimAnalysisResult(
         upperTierClasses,
         passThroughIdentities,
         liveProgramClasses,
-        forcedUnchangedCoordinates);
+        forcedUnchangedCoordinates,
+        multiReleaseSources);
+  }
+
+  /* package */ TrimAnalysisResult withMultiReleaseSources(
+      final Map<Path, MultiReleaseArchivePlan.SourceData> multiReleaseSources) {
+    return new TrimAnalysisResult(
+        candidateAnalyses,
+        candidateRoots,
+        reachableArtifacts,
+        analysisRuns,
+        targetRelease,
+        runtimeRelease,
+        platformIdentities,
+        analyzedTiers,
+        upperTierClasses,
+        passThroughIdentities,
+        liveProgramClasses,
+        forcedUnchangedCoordinates,
+        multiReleaseSources);
   }
 }

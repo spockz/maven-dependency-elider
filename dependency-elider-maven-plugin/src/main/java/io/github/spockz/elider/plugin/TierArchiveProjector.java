@@ -30,7 +30,12 @@ final class TierArchiveProjector {
       final Inventory inventory, final JdkClassTablePlan classTables) throws IOException {
     final List<TierContext> contexts = new ArrayList<>();
     for (final int tier : inventory.tiers()) {
-      contexts.add(projectTier(inventory, classTables.byRelease().get(tier), tier));
+      final List<ClassPool> tables = classTables.byRelease().get(tier);
+      final TierContext view = projectTier(inventory, tables.getFirst(), tier);
+      contexts.add(view);
+      for (final ClassPool table : tables.subList(1, tables.size())) {
+        contexts.add(view.withPlatform(table));
+      }
     }
     return List.copyOf(contexts);
   }
@@ -72,17 +77,27 @@ final class TierArchiveProjector {
       throws IOException {
     final Path source = snapshot.filePath().toAbsolutePath().normalize();
     final boolean needsProjection = inventory.projectedSources().contains(source);
-    final Path analysisPath =
-        needsProjection
-            ? MultiReleaseLibraryProjection.create(
-                source, snapshot.coordinate(), inventory.projectionDirectory(), release)
-            : source;
+    final MultiReleaseCandidateInfo mrInfo = inventory.multiReleaseCandidates().get(snapshot);
+    final Path analysisPath;
+    final Set<String> analysisClasses;
+    if (needsProjection) {
+      if (release == operation.targetRelease()
+          && mrInfo != null
+          && mrInfo.targetProjection() != null) {
+        analysisPath = mrInfo.targetProjection();
+        analysisClasses = mrInfo.targetClasses();
+      } else {
+        analysisPath =
+            MultiReleaseLibraryProjection.create(
+                source, snapshot.coordinate(), inventory.projectionDirectory(), release);
+        analysisClasses = TrimPaths.classNames(analysisPath);
+      }
+    } else {
+      analysisPath = source;
+      analysisClasses = inventory.classesBySourcePath().get(source);
+    }
     paths.put(snapshot, analysisPath);
-    classes.put(
-        snapshot,
-        needsProjection
-            ? TrimPaths.classNames(analysisPath)
-            : inventory.classesBySourcePath().get(source));
+    classes.put(snapshot, analysisClasses);
   }
 
   @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
@@ -144,6 +159,19 @@ final class TierArchiveProjector {
           candidates,
           programs,
           jdkClassTable);
+    }
+
+    /* package */ TierContext withPlatform(final ClassPool table) {
+      return new TierContext(
+          tierRelease,
+          targetCompilerRelease,
+          multiReleaseCandidates,
+          paths,
+          classes,
+          ownersByClass,
+          candidatePrepared,
+          programPrepared,
+          table);
     }
 
     /* package */ int release() {

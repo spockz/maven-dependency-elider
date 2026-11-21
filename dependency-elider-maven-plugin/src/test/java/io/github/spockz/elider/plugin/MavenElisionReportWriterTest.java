@@ -78,10 +78,32 @@ final class MavenElisionReportWriterTest {
             "c".repeat(64));
     final MavenElisionReportSnapshot original =
         MavenElisionReportSnapshot.from(
-            project(),
-            prediction,
-            new MavenVulnerabilityAssessment.Result(List.of(), List.of(), List.of(), false),
-            ExclusionReview.unavailable("unavailable"));
+                project(),
+                prediction,
+                new MavenVulnerabilityAssessment.Result(List.of(), List.of(), List.of(), false),
+                ExclusionReview.unavailable("unavailable"))
+            .withForbiddenCodeAssessments(
+                List.of(
+                    new ForbiddenCodeAssessment(
+                        "CVE-2026-12345",
+                        "p.Target",
+                        ForbiddenCodeAssessment.ComponentKind.MAVEN_ARTIFACT,
+                        "org.example:trimmed:jar:1.0",
+                        "[1.0]",
+                        "1.0",
+                        21,
+                        false,
+                        ForbiddenCodeAssessment.VersionApplicability.APPLICABLE,
+                        ForbiddenCodeAssessment.Mode.PREDICTED,
+                        ForbiddenCodeAssessment.Status.PASS,
+                        "PHYSICAL_DECLARATIONS",
+                        "/tmp/trimmed.jar",
+                        List.of(),
+                        true,
+                        "absent",
+                        "POM",
+                        null,
+                        false)));
     final Path report = temporaryDirectory.resolve("analysis-report.json");
     MavenElisionReportWriter.write(report, original);
     final MavenElisionReportSnapshot replay = MavenElisionReportWriter.read(report);
@@ -91,6 +113,10 @@ final class MavenElisionReportWriterTest {
         (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(report.toFile());
     final com.fasterxml.jackson.databind.node.ObjectNode badMode = saved.deepCopy();
     badMode.put("mode", "INVENTED");
+    final com.fasterxml.jackson.databind.node.ObjectNode badAssessmentMode = saved.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode)
+            badAssessmentMode.withArray("forbiddenCodeAssessments").get(0))
+        .put("mode", "OBSERVED");
     final com.fasterxml.jackson.databind.node.ObjectNode falseMeasurement = saved.deepCopy();
     falseMeasurement.put("uncompressedProgramClassBytesPruned", 0);
     final com.fasterxml.jackson.databind.node.ObjectNode absentClasses = saved.deepCopy();
@@ -99,6 +125,12 @@ final class MavenElisionReportWriterTest {
         .putNull("plannedClasses");
     assertAll(
         () -> assertThat(replay.mode()).isEqualTo(MavenElisionReportSnapshot.Mode.ANALYSIS),
+        () ->
+            assertThat(replay.forbiddenCodeAssessments())
+                .isEqualTo(original.forbiddenCodeAssessments()),
+        () ->
+            assertThat(MavenElisionReportWriter.render(replay))
+                .anyMatch(line -> line.contains("PREDICTED PASS") && line.contains("p.Target")),
         () -> assertThat(replay.inputArtifactCount()).isEqualTo(1),
         () ->
             assertThat(replay.sourceAttributionFallback())
@@ -107,6 +139,7 @@ final class MavenElisionReportWriterTest {
             assertThat(MavenElisionReportWriter.render(replay))
                 .anyMatch(line -> line.contains("source attribution unavailable")),
         () -> assertBadPayloadRejected(mapper, badMode, "bad-mode"),
+        () -> assertBadPayloadRejected(mapper, badAssessmentMode, "bad-assessment-mode"),
         () -> assertBadPayloadRejected(mapper, falseMeasurement, "false-measurement"),
         () -> assertBadPayloadRejected(mapper, absentClasses, "absent-classes"),
         () ->

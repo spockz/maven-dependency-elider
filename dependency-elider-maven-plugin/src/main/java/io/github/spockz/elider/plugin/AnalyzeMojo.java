@@ -50,6 +50,7 @@ public final class AnalyzeMojo extends AbstractElisionMojo {
     BanishedDependencyLifecycleActivation.verifyAnalyzeConfiguration(
         session, project, mojoExecution, banishedDependencies);
     try {
+      final boolean trustedProcessClasses = trustedProcessClassesContext();
       final AnalyzePrediction prediction =
           predictionService.predict(
               project,
@@ -61,28 +62,55 @@ public final class AnalyzeMojo extends AbstractElisionMojo {
                   session,
                   new ElisionAnalysisModel.CompletenessOptions(
                       sourceRootsComplete,
-                      productionClassesComplete,
-                      trustedProcessClassesContext(),
+                      productionClassesComplete || trustedProcessClasses,
+                      trustedProcessClasses,
                       true),
                   sharedTrimOptions(),
                   new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots),
                   null,
-                  closedWorld),
+                  closedWorld,
+                  configuredRuntimePlatforms()),
               projectDependenciesResolver);
       verifyBanPrediction(prediction);
       final ExclusionReview exclusionReview = ExclusionReview.capture(project, session);
+      final ConfiguredVulnerabilityMappings mappings = configuredVulnerabilityMappings();
+      final List<ForbiddenCodeAssessment> forbiddenCode =
+          MavenForbiddenCodeAssessment.predict(
+              project, prediction, mappings, failOnForbiddenCode, productionOutput);
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
-          assessVulnerabilities(prediction);
+          assessVulnerabilities(prediction, mappings);
       final MavenElisionReportSnapshot snapshot =
           MavenElisionReportSnapshot.from(
-              project, prediction, vulnerabilityAssessment, exclusionReview);
+                  project, prediction, vulnerabilityAssessment, exclusionReview)
+              .withForbiddenCodeAssessments(forbiddenCode);
       final Path summary = analysisSummaryPath();
       publishReports(prediction, exclusionReview, snapshot, summary);
       logReport(prediction, snapshot, summary);
+      MavenForbiddenCodeAssessment.enforce(forbiddenCode, getLog());
+    } catch (final ElisionReachabilityEngine.PlatformLinkageUnavailable unavailable) {
+      throw failedLinkage(unavailable);
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency analysis failed closed: " + exception.getMessage(), exception);
     }
+  }
+
+  private MojoFailureException failedLinkage(
+      final ElisionReachabilityEngine.PlatformLinkageUnavailable unavailable) {
+    try {
+      MavenForbiddenCodeAssessment.reportBlockedLinkage(
+          unavailable,
+          configuredVulnerabilityMappings(),
+          failOnForbiddenCode,
+          ForbiddenCodeAssessment.Mode.PREDICTED,
+          getLog());
+    } catch (final IOException policyFailure) {
+      policyFailure.addSuppressed(unavailable);
+      return new MojoFailureException(
+          "Dependency analysis failed closed: " + policyFailure.getMessage(), policyFailure);
+    }
+    return new MojoFailureException(
+        "Dependency analysis failed closed: " + unavailable.getMessage(), unavailable);
   }
 
   private void publishReports(
@@ -159,11 +187,12 @@ public final class AnalyzeMojo extends AbstractElisionMojo {
   }
 
   private MavenVulnerabilityAssessment.Result assessVulnerabilities(
-      final AnalyzePrediction prediction) throws IOException {
+      final AnalyzePrediction prediction, final ConfiguredVulnerabilityMappings mappings)
+      throws IOException {
     return new MavenVulnerabilityAssessment(getLog(), assumeConventionalJavaSourceLayout)
         .assess(
             vulnerabilityCacheConfig(),
-            configuredVulnerabilityMappings(),
+            mappings,
             prediction,
             () ->
                 MavenPreconditionPrediction.capture(

@@ -115,7 +115,13 @@ final class EffectiveTrimCacheContext {
     final ArtifactCoordinate coordinate = snapshot.coordinate();
     final Path path = snapshot.filePath().toAbsolutePath().normalize();
     final ArtifactDigests cached = inputDigests.get(path);
-    final String sha256 = cached != null ? cached.sha256() : ArtifactDigests.read(path).sha256();
+    final String sha256;
+    if (cached != null) {
+      sha256 = cached.sha256();
+    } else {
+      MultiReleaseWorkObserver.recordDigestRead(path);
+      sha256 = ArtifactDigests.read(path).sha256();
+    }
     return new ArtifactCacheIdentity(
         coordinate.groupId(),
         coordinate.artifactId(),
