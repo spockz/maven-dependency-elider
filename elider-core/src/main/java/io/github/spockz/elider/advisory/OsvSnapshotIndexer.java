@@ -57,6 +57,7 @@ public final class OsvSnapshotIndexer {
   private static final String NAME_FIELD = "name";
   private static final String VERSIONS_FIELD = "versions";
   private static final String WITHDRAWN_FIELD = "withdrawn";
+  private static final Pattern RECORD_ID_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
   private static final Pattern CVE_PATTERN = Pattern.compile("^CVE-[0-9]{4}-[0-9]{4,}$");
   private static final Pattern FQCN_PATTERN =
       Pattern.compile("\\b([a-z][a-z0-9_]*(\\.[a-z0-9_]+)+\\.[A-Z][a-zA-Z0-9_]*)\\b");
@@ -88,7 +89,7 @@ public final class OsvSnapshotIndexer {
     final Map<String, OsvAdvisoryRecord> records = new LinkedHashMap<>();
     final Set<String> seen = new HashSet<>();
     final Set<String> ambiguous = new HashSet<>();
-    final Map<String, String> accepted = new java.util.HashMap<>();
+    final Map<String, AcceptedSource> accepted = new java.util.HashMap<>();
     final Map<String, String> withdrawnRevisions = new java.util.HashMap<>();
     final List<String> skipped = new ArrayList<>();
     try (ZipInputStream zip = new ZipInputStream(zipStream)) {
@@ -98,6 +99,7 @@ public final class OsvSnapshotIndexer {
           final byte[] bytes = zip.readAllBytes();
           final String locator = entry.getName();
           String recordId = null;
+          String sourceDigest = null;
           try {
             final JsonNode root = readSingleJsonDocument(bytes, OSV_RECORD);
             if (!root.isObject()
@@ -106,35 +108,40 @@ public final class OsvSnapshotIndexer {
               throw new IllegalArgumentException("OSV record has no valid ID");
             }
             recordId = root.path("id").textValue();
-            if (!recordId.matches("[A-Za-z0-9][A-Za-z0-9._-]*")) {
+            if (!RECORD_ID_PATTERN.matcher(recordId).matches()) {
               throw new IllegalArgumentException("OSV record ID has invalid characters");
             }
             if (!seen.add(recordId)) {
               records.remove(recordId);
               withdrawnRevisions.remove(recordId);
-              final String original = accepted.remove(recordId);
+              final AcceptedSource original = accepted.remove(recordId);
               if (original != null) {
-                skipped.add(original);
+                skipped.add(
+                    formatSkippedRecord(
+                        original.locator(),
+                        original.sha256(),
+                        "Duplicate OSV record ID: " + recordId));
               }
               ambiguous.add(recordId);
               throw new IllegalArgumentException("Duplicate OSV record ID: " + recordId);
             }
-            final OsvAdvisoryRecord record = parseAdvisory(root, bytes, skipped, locator);
+            sourceDigest = sha256(bytes);
+            final OsvAdvisoryRecord record = parseAdvisory(root, sourceDigest, skipped, locator);
             if (record != null && !ambiguous.contains(recordId)) {
               records.put(recordId, record);
             }
             if (record == null) {
               withdrawnRevisions.put(recordId, root.path(MODIFIED_FIELD).textValue());
             }
-            accepted.put(
-                recordId, skippedRecord(locator, bytes, "Duplicate OSV record ID: " + recordId));
+            accepted.put(recordId, new AcceptedSource(locator, sourceDigest));
           } catch (final IOException | IllegalArgumentException failure) {
             if (recordId != null) {
               records.remove(recordId);
               withdrawnRevisions.remove(recordId);
               ambiguous.add(recordId);
             }
-            skipped.add(skippedRecord(locator, bytes, failure.getMessage()));
+            final String digest = sourceDigest != null ? sourceDigest : sha256(bytes);
+            skipped.add(formatSkippedRecord(locator, digest, failure.getMessage()));
           }
         }
         zip.closeEntry();
@@ -151,12 +158,15 @@ public final class OsvSnapshotIndexer {
   /** Stable diagnostic includes the skipped bytes so repairs change source identity. */
   static String skippedRecord(final String locator, final byte[] bytes, final String reason)
       throws IOException {
-    return locator
-        + " sha256="
-        + sha256(bytes)
-        + ": "
-        + Objects.toString(reason, "invalid OSV record");
+    return formatSkippedRecord(locator, sha256(bytes), reason);
   }
+
+  private static String formatSkippedRecord(
+      final String locator, final String digest, final String reason) {
+    return locator + " sha256=" + digest + ": " + Objects.toString(reason, "invalid OSV record");
+  }
+
+  private record AcceptedSource(String locator, String sha256) {}
 
   /** Valid records and malformed record diagnostics from one source observation. */
   public record PartialIndex(
@@ -208,7 +218,7 @@ public final class OsvSnapshotIndexer {
     }
     try {
       final String modified = requiredSourceText(root, MODIFIED_FIELD);
-      final OsvAdvisoryRecord record = parseAdvisory(root, bytes, null, null);
+      final OsvAdvisoryRecord record = parseAdvisory(root, sha256(bytes), null, null);
       return new IndexedOsvRecord(expectedId, modified, Optional.ofNullable(record));
     } catch (final IllegalArgumentException exception) {
       throw new IOException("Invalid OSV record " + root.path("id").asText(""), exception);
@@ -227,7 +237,7 @@ public final class OsvSnapshotIndexer {
     final List<String> skipped = new ArrayList<>();
     try {
       final String modified = requiredSourceText(root, MODIFIED_FIELD);
-      final OsvAdvisoryRecord record = parseAdvisory(root, bytes, skipped, expectedId);
+      final OsvAdvisoryRecord record = parseAdvisory(root, sha256(bytes), skipped, expectedId);
       return new PartialRecord(
           new IndexedOsvRecord(expectedId, modified, Optional.ofNullable(record)), skipped);
     } catch (final IllegalArgumentException exception) {
@@ -270,7 +280,7 @@ public final class OsvSnapshotIndexer {
 
   private OsvAdvisoryRecord parseAdvisory(
       final JsonNode root,
-      final byte[] sourceBytes,
+      final String osvDigest,
       final List<String> skipped,
       final String locator) {
     if (root == null || !root.isObject()) {
@@ -314,7 +324,6 @@ public final class OsvSnapshotIndexer {
       }
     }
     final String cveId = resolveCveId(root);
-    final String osvDigest = sha256(sourceBytes);
     final List<OsvAffectedPackage> affectedPackages = new ArrayList<>();
     final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence = new ArrayList<>();
     readAffectedEntries(
