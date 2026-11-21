@@ -853,6 +853,7 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
+[INFO] CVE Freshness: INCOMPLETE (partial or mixed source freshness; some sources failed or are incomplete)
 [INFO] CVE Sources:
 [INFO]   - CVE_LIST PARTIAL
 [INFO]     Skipped 79 CVE List source row(s)
@@ -1351,7 +1352,8 @@ $ ./mvnw \
   -Delide.summaryFile=$TRANSCRIPT_EVIDENCE/forbidden-code/decode/build/dependency-elider-report.json \
   -Delide.failOnForbiddenCode=true
 Process exit status: 0
-[INFO] Cache disabled by command line flag, project will be built fully and not cached
+[INFO] Loading cache configuration from <PROJECT_ROOT>/.mvn/maven-build-cache-config.xml
+[INFO] Using SHA-256 hash algorithm for cache
 [INFO]
 [INFO] ------------< io.github.spockz:example-forbidden-code-app >-------------
 [INFO] Building Example: Forbidden Code at the Production Boundary 0.1.0-SNAPSHOT
@@ -1382,6 +1384,7 @@ Process exit status: 0
 [INFO]     Outcome: DECLARED_CODE_ABSENT; All effective declared code and its nested classes are absent from the trimmed artifact. This observation is limited to the declared code and does not establish declaration completeness.
 [INFO]     Declared code: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int)] RESOLVED; classes: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundedInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry]; reasons: []
 [INFO]     Sources: [POM]
+[INFO] CVE Freshness: UNAVAILABLE (vulnerability cache and refresh sources are unavailable)
 [INFO] CVE Sources:
 [INFO]   - CACHE UNAVAILABLE
 [INFO]     Generic findings cache is unavailable offline
@@ -1429,7 +1432,8 @@ $ ./mvnw \
   -Delide.trimJars=true \
   -Delide.failOnForbiddenCode=true
 Process exit status: 0
-[INFO] Cache disabled by command line flag, project will be built fully and not cached
+[INFO] Loading cache configuration from <PROJECT_ROOT>/.mvn/maven-build-cache-config.xml
+[INFO] Using SHA-256 hash algorithm for cache
 [INFO]
 [INFO] ------------< io.github.spockz:example-forbidden-code-app >-------------
 [INFO] Building Example: Forbidden Code at the Production Boundary 0.1.0-SNAPSHOT
@@ -1462,6 +1466,7 @@ Process exit status: 0
 [INFO]     Outcome: PLANNED_CODE_ABSENT; Analysis would remove declared code; the resulting archive has not been verified
 [INFO]     Declared code: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int)] RESOLVED; classes: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundedInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry]; reasons: []
 [INFO]     Sources: [POM]
+[INFO] CVE Freshness: UNAVAILABLE (vulnerability cache and refresh sources are unavailable)
 [INFO] CVE Sources:
 [INFO]   - CACHE UNAVAILABLE
 [INFO]     Generic findings cache is unavailable offline
@@ -1510,7 +1515,8 @@ $ ./mvnw \
   -Delide.summaryFile=$TRANSCRIPT_EVIDENCE/forbidden-code/retained/build/dependency-elider-report.json \
   -Delide.failOnForbiddenCode=true
 Process exit status: 0
-[INFO] Cache disabled by command line flag, project will be built fully and not cached
+[INFO] Loading cache configuration from <PROJECT_ROOT>/.mvn/maven-build-cache-config.xml
+[INFO] Using SHA-256 hash algorithm for cache
 [INFO]
 [INFO] ------------< io.github.spockz:example-forbidden-code-app >-------------
 [INFO] Building Example: Forbidden Code at the Production Boundary 0.1.0-SNAPSHOT
@@ -1541,6 +1547,7 @@ Process exit status: 0
 [INFO]     Outcome: NO_PROOF; A corresponding forbidden-code declaration lacks an observed pass
 [INFO]     Declared code: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream#read(byte[],int,int)] RESOLVED; classes: [org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundedInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry]; reasons: []
 [INFO]     Sources: [POM]
+[INFO] CVE Freshness: UNAVAILABLE (vulnerability cache and refresh sources are unavailable)
 [INFO] CVE Sources:
 [INFO]   - CACHE UNAVAILABLE
 [INFO]     Generic findings cache is unavailable offline

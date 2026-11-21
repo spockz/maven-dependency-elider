@@ -622,6 +622,7 @@ Process exit status: 0
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
 [INFO]     Sources: [CVE_LIST, OSV]
+[INFO] CVE Freshness: INCOMPLETE (partial or mixed source freshness; some sources failed or are incomplete)
 [INFO] CVE Sources:
 [INFO]   - CVE_LIST PARTIAL
 [INFO]     Skipped 79 CVE List source row(s)
@@ -2331,6 +2332,7 @@ Process exit status: 0
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
+[INFO] CVE Freshness: INCOMPLETE (partial or mixed source freshness; some sources failed or are incomplete)
 [INFO] CVE Sources:
 [INFO]   - CVE_LIST PARTIAL
 [INFO]     Skipped 79 CVE List source row(s)
@@ -3139,6 +3141,7 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
 [INFO]     Sources: [OSV]
+[INFO] CVE Freshness: INCOMPLETE (partial or mixed source freshness; some sources failed or are incomplete)
 [INFO] CVE Sources:
 [INFO]   - CVE_LIST PARTIAL
 [INFO]     Skipped 79 CVE List source row(s)
@@ -3431,6 +3434,7 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
+[INFO] CVE Freshness: INCOMPLETE (partial or mixed source freshness; some sources failed or are incomplete)
 [INFO] CVE Sources:
 [INFO]   - CVE_LIST PARTIAL
 [INFO]     Skipped 79 CVE List source row(s)
@@ -3619,6 +3623,7 @@ Process exit status: 0
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
 [INFO]     Sources: [CVE_LIST, OSV]
+[INFO] CVE Freshness: INCOMPLETE (partial or mixed source freshness; some sources failed or are incomplete)
 [INFO] CVE Sources:
 [INFO]   - CVE_LIST PARTIAL
 [INFO]     Skipped 79 CVE List source row(s)
