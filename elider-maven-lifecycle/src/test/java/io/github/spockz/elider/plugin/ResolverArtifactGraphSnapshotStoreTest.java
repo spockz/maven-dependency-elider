@@ -3,6 +3,8 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.Map;
 import org.eclipse.aether.graph.DependencyNode;
@@ -105,5 +107,51 @@ final class ResolverArtifactGraphSnapshotStoreTest {
 
     assertThat(ResolverArtifactGraphSnapshotStore.fromPayload(store.toPayload()).snapshots())
         .containsKey(ResolverArtifactGraphSnapshotStoreTestSupport.PROJECT_KEY);
+  }
+
+  @Test
+  void sharesImmutableHistoricalEntriesAcrossUpdates() {
+    final DependencyNode root = ResolverArtifactGraphSnapshotStoreTestSupport.node("root");
+    final String projectKey = ResolverArtifactGraphSnapshotStoreTestSupport.PROJECT_KEY;
+    final ResolverArtifactGraphSnapshot first =
+        ResolverArtifactGraphSnapshot.capture(root, projectKey, true, "a".repeat(64), 1, 1);
+    final ResolverArtifactGraphSnapshot second =
+        ResolverArtifactGraphSnapshot.capture(root, projectKey, true, "a".repeat(64), 1, 2);
+
+    final ResolverArtifactGraphSnapshotStore store1 =
+        ResolverArtifactGraphSnapshotStore.empty().append(first);
+    final ResolverArtifactGraphSnapshotStore.PlanObservation observation =
+        store1.observePlan(projectKey, true, "a".repeat(64));
+    final ResolverArtifactGraphSnapshotStore store2 =
+        store1.withObservation(projectKey, observation);
+    final ResolverArtifactGraphSnapshotStore store3 = store2.append(second);
+
+    assertAll(
+        "Immutable history sharing across store updates",
+        () ->
+            assertSame(
+                store1.snapshots(),
+                store2.snapshots(),
+                "withObservation should reuse snapshots map"),
+        () ->
+            assertSame(
+                store1.capturePairs(),
+                store2.capturePairs(),
+                "withObservation should reuse capturePairs map"),
+        () ->
+            assertSame(
+                store2,
+                store2.withObservation(projectKey, observation),
+                "unchanged observation should return the same store instance"),
+        () ->
+            assertSame(
+                store1.snapshots().get(projectKey).get(0),
+                store3.snapshots().get(projectKey).get(0),
+                "append should preserve historical snapshot map identity"),
+        () ->
+            assertSame(
+                store1.capturePairs().get(projectKey).get(0),
+                store3.capturePairs().get(projectKey).get(0),
+                "append should preserve historical capture pair map identity"));
   }
 }

@@ -5,9 +5,11 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.HexDigest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import org.apache.maven.project.MavenProject;
@@ -20,7 +22,7 @@ import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.sisu.Priority;
 
 /** Captures mediated graphs and applies fingerprint-bound node projections. */
-@SuppressWarnings("PMD.LawOfDemeter")
+@SuppressWarnings({"PMD.LawOfDemeter", "PMD.TooManyMethods", "PMD.CompareObjectsWithEquals"})
 @Named("elider-mediated-graph-capture")
 @Priority(9)
 @Singleton
@@ -28,6 +30,12 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
   /** Shared session key used by graph capture and its tests. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static final String SESSION_DATA_KEY = "io.github.spockz.elider.resolver.graph-snapshots.v1";
+
+  /** Cache of the most recently published immutable store keyed by SessionData. */
+  private static final Map<org.eclipse.aether.SessionData, TrustedStore> TRUSTED_STORES =
+      Collections.synchronizedMap(new WeakHashMap<>());
+
+  private record TrustedStore(Object payload, ResolverArtifactGraphSnapshotStore store) {}
 
   /** Creates the indexed graph-capture session decorator. */
   public EliderMediatedGraphCaptureDecorator() {
@@ -149,6 +157,30 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
         .reduce("", String::concat);
   }
 
+  private static ResolverArtifactGraphSnapshotStore loadStore(
+      final org.eclipse.aether.SessionData data, final Object current) {
+    if (current == null) {
+      return ResolverArtifactGraphSnapshotStore.empty();
+    }
+    final TrustedStore trusted = TRUSTED_STORES.get(data);
+    if (trusted != null && trusted.payload() == current) {
+      return trusted.store();
+    }
+    return ResolverArtifactGraphSnapshotStore.fromPayload(current);
+  }
+
+  private static boolean publishStore(
+      final org.eclipse.aether.SessionData data,
+      final Object current,
+      final ResolverArtifactGraphSnapshotStore updated) {
+    final Map<String, Object> nextPayload = updated.toPayload();
+    if (data.set(SESSION_DATA_KEY, current, nextPayload)) {
+      TRUSTED_STORES.put(data, new TrustedStore(nextPayload, updated));
+      return true;
+    }
+    return false;
+  }
+
   private static long observePlan(
       final RepositorySystemSession session,
       final String projectKey,
@@ -157,13 +189,12 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
     final org.eclipse.aether.SessionData data = session.getData();
     while (true) {
       final Object current = data.get(SESSION_DATA_KEY);
-      final ResolverArtifactGraphSnapshotStore store =
-          ResolverArtifactGraphSnapshotStore.fromPayload(current);
+      final ResolverArtifactGraphSnapshotStore store = loadStore(data, current);
       final ResolverArtifactGraphSnapshotStore.PlanObservation observation =
           store.observePlan(projectKey, planPresent, planFingerprint);
       final ResolverArtifactGraphSnapshotStore updated =
           store.withObservation(projectKey, observation);
-      if (updated.equals(store) || data.set(SESSION_DATA_KEY, current, updated.toPayload())) {
+      if (updated == store || updated.equals(store) || publishStore(data, current, updated)) {
         return observation.generation();
       }
     }
@@ -192,8 +223,7 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
       final ResolverArtifactGraphSnapshot afterSnapshot,
       final String projectKey,
       final String captureToken) {
-    final ResolverArtifactGraphSnapshotStore store =
-        ResolverArtifactGraphSnapshotStore.fromPayload(current);
+    final ResolverArtifactGraphSnapshotStore store = loadStore(data, current);
     final long generation = store.nextGeneration(projectKey);
     final ResolverArtifactGraphSnapshot before = beforeSnapshot.withCaptureGeneration(generation);
     final ResolverArtifactGraphSnapshot after = afterSnapshot.withCaptureGeneration(generation);
@@ -208,6 +238,6 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
             before,
             after);
     final ResolverArtifactGraphSnapshotStore updated = store.append(pair);
-    return updated.equals(store) || data.set(SESSION_DATA_KEY, current, updated.toPayload());
+    return updated.equals(store) || publishStore(data, current, updated);
   }
 }

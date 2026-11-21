@@ -26,7 +26,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Exercises the separate post-mediation graph capture decorator. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.LawOfDemeter"})
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.LawOfDemeter",
+  "PMD.CouplingBetweenObjects"
+})
 final class EliderMediatedGraphCaptureDecoratorTest {
   /** Test-specific Maven project root. */
   @TempDir Path temporaryDirectory;
@@ -309,5 +313,118 @@ final class EliderMediatedGraphCaptureDecoratorTest {
                 .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
                 .present())
         .isTrue();
+  }
+
+  @Test
+  void reusesTrustedHistoryAcrossMultiProjectTransformCyclesAndRejectsTamperedPayload()
+      throws Exception {
+    final MavenProject projectA =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "proj-a");
+    final MavenProject projectB =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "proj-b");
+    final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession();
+    final EliderMediatedGraphCaptureDecorator decorator = new EliderMediatedGraphCaptureDecorator();
+    final RepositorySystemSession decoratedA = decorator.decorate(projectA, session);
+    final RepositorySystemSession decoratedB = decorator.decorate(projectB, session);
+
+    decoratedA
+        .getDependencyGraphTransformer()
+        .transformGraph(
+            EliderMediatedGraphCaptureDecoratorTestSupport.node("a1"),
+            EliderMediatedGraphCaptureDecoratorTestSupport.context(decoratedA));
+    final Map<String, Object> firstSnapshotA =
+        EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(session)
+            .snapshots()
+            .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(projectA))
+            .getFirst();
+    final String keyA = EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(projectA);
+    final String keyB = EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(projectB);
+    final Map<String, Object> rawFirstSnapshotBefore = rawFirstSnapshot(session, keyA);
+
+    decoratedB
+        .getDependencyGraphTransformer()
+        .transformGraph(
+            EliderMediatedGraphCaptureDecoratorTestSupport.node("b1"),
+            EliderMediatedGraphCaptureDecoratorTestSupport.context(decoratedB));
+    decoratedA
+        .getDependencyGraphTransformer()
+        .transformGraph(
+            EliderMediatedGraphCaptureDecoratorTestSupport.node("a2"),
+            EliderMediatedGraphCaptureDecoratorTestSupport.context(decoratedA));
+
+    final ResolverArtifactGraphSnapshotStore storeAfter =
+        EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(session);
+    final Map<String, Object> rawFirstSnapshotAfter = rawFirstSnapshot(session, keyA);
+
+    assertThat(storeAfter.snapshots().get(keyA)).hasSize(2);
+    assertThat(storeAfter.snapshots().get(keyB)).hasSize(1);
+    assertThat(storeAfter.snapshots().get(keyA).getFirst())
+        .as("trusted session round-trip should preserve historical snapshot values")
+        .isEqualTo(firstSnapshotA);
+    assertThat(rawFirstSnapshotAfter)
+        .as("trusted session reuse should preserve raw historical snapshot map identity")
+        .isSameAs(rawFirstSnapshotBefore);
+
+    final Map<String, Object> tampered =
+        new java.util.concurrent.ConcurrentHashMap<>(
+            (Map<String, Object>)
+                session.getData().get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY));
+    tampered.put("schemaVersion", 99);
+    session.getData().set(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY, tampered);
+    assertThatThrownBy(
+            () ->
+                decoratedA
+                    .getDependencyGraphTransformer()
+                    .transformGraph(
+                        EliderMediatedGraphCaptureDecoratorTestSupport.node("a3"),
+                        EliderMediatedGraphCaptureDecoratorTestSupport.context(decoratedA)))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> rawFirstSnapshot(
+      final DefaultRepositorySystemSession session, final String projectKey) {
+    final Map<String, Object> root =
+        (Map<String, Object>)
+            session.getData().get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
+    final Map<String, List<Map<String, Object>>> snapshots =
+        (Map<String, List<Map<String, Object>>>) root.get("snapshots");
+    return snapshots.get(projectKey).getFirst();
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void rejectsMutatedForeignPayloadAfterUnchangedPlanObservation() throws Exception {
+    final EliderMediatedGraphCaptureDecorator decorator = new EliderMediatedGraphCaptureDecorator();
+    final DefaultRepositorySystemSession session =
+        EliderMediatedGraphCaptureDecoratorTestSupport.session();
+    final MavenProject project =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(
+            temporaryDirectory, "foreign-mutation");
+    final RepositorySystemSession decorated = decorator.decorate(project, session);
+    decorated
+        .getDependencyGraphTransformer()
+        .transformGraph(
+            EliderMediatedGraphCaptureDecoratorTestSupport.node("n1"),
+            EliderMediatedGraphCaptureDecoratorTestSupport.context(decorated));
+
+    final Map<String, Object> foreignMutable =
+        new java.util.concurrent.ConcurrentHashMap<>(
+            (Map<String, Object>)
+                session.getData().get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY));
+    session.getData().set(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY, foreignMutable);
+
+    // Decorate with unchanged plan, then mutate the foreign map in place.
+    final RepositorySystemSession redecorated = decorator.decorate(project, session);
+    foreignMutable.put("schemaVersion", 99);
+
+    assertThatThrownBy(
+            () ->
+                redecorated
+                    .getDependencyGraphTransformer()
+                    .transformGraph(
+                        EliderMediatedGraphCaptureDecoratorTestSupport.node("n2"),
+                        EliderMediatedGraphCaptureDecoratorTestSupport.context(redecorated)))
+        .isInstanceOf(IllegalStateException.class);
   }
 }

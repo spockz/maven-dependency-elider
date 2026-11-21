@@ -18,13 +18,11 @@ import java.util.Set;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.UseConcurrentHashMap",
-  "PMD.CyclomaticComplexity"
+  "PMD.CyclomaticComplexity",
+  "PMD.TooManyMethods",
+  "PMD.AvoidFieldNameMatchingMethodName"
 })
-record ResolverArtifactGraphSnapshotStore(
-    Map<String, List<Map<String, Object>>> snapshots,
-    Map<String, Long> generations,
-    Map<String, PlanObservation> observations,
-    Map<String, List<Map<String, Object>>> capturePairs) {
+final class ResolverArtifactGraphSnapshotStore {
   private static final int SCHEMA_VERSION = 1;
 
   private static final String SCHEMA_FIELD = "schemaVersion";
@@ -37,27 +35,78 @@ record ResolverArtifactGraphSnapshotStore(
 
   private static final String CAPTURE_PAIRS_FIELD = "capturePairs";
 
-  ResolverArtifactGraphSnapshotStore {
-    Objects.requireNonNull(snapshots, "snapshots");
-    Objects.requireNonNull(generations, "generations");
-    Objects.requireNonNull(observations, "observations");
-    Objects.requireNonNull(capturePairs, "capturePairs");
-    final Map<String, List<Map<String, Object>>> snapshotCopy = new LinkedHashMap<>();
-    snapshots.forEach(
-        (projectKey, values) ->
-            snapshotCopy.put(
-                projectKey,
-                values.stream().map(ResolverArtifactGraphSnapshotStore::immutableMap).toList()));
-    snapshots = Collections.unmodifiableMap(snapshotCopy);
-    generations = Collections.unmodifiableMap(new LinkedHashMap<>(generations));
-    observations = Collections.unmodifiableMap(new LinkedHashMap<>(observations));
-    final Map<String, List<Map<String, Object>>> pairCopy = new LinkedHashMap<>();
-    capturePairs.forEach(
-        (projectKey, values) ->
-            pairCopy.put(
-                projectKey,
-                values.stream().map(ResolverArtifactGraphSnapshotStore::immutableMap).toList()));
-    capturePairs = Collections.unmodifiableMap(pairCopy);
+  private final Map<String, List<Map<String, Object>>> snapshots;
+
+  private final Map<String, Long> generations;
+
+  private final Map<String, PlanObservation> observations;
+
+  private final Map<String, List<Map<String, Object>>> capturePairs;
+
+  private ResolverArtifactGraphSnapshotStore(
+      final Map<String, List<Map<String, Object>>> snapshots,
+      final Map<String, Long> generations,
+      final Map<String, PlanObservation> observations,
+      final Map<String, List<Map<String, Object>>> capturePairs) {
+    this.snapshots = Objects.requireNonNull(snapshots, "snapshots");
+    this.generations = Objects.requireNonNull(generations, "generations");
+    this.observations = Objects.requireNonNull(observations, "observations");
+    this.capturePairs = Objects.requireNonNull(capturePairs, "capturePairs");
+  }
+
+  Map<String, List<Map<String, Object>>> snapshots() {
+    return snapshots;
+  }
+
+  Map<String, Long> generations() {
+    return generations;
+  }
+
+  Map<String, PlanObservation> observations() {
+    return observations;
+  }
+
+  Map<String, List<Map<String, Object>>> capturePairs() {
+    return capturePairs;
+  }
+
+  List<ResolverArtifactGraphCapturePair> capturePairs(final String projectKey) {
+    return capturePairs.getOrDefault(projectKey, List.of()).stream()
+        .map(ResolverArtifactGraphCapturePair::fromPayload)
+        .toList();
+  }
+
+  @Override
+  public boolean equals(final Object other) {
+    if (this == other) {
+      return true;
+    }
+    if (!(other instanceof ResolverArtifactGraphSnapshotStore store)) {
+      return false;
+    }
+    return snapshots.equals(store.snapshots)
+        && generations.equals(store.generations)
+        && observations.equals(store.observations)
+        && capturePairs.equals(store.capturePairs);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(snapshots, generations, observations, capturePairs);
+  }
+
+  @Override
+  public String toString() {
+    return "ResolverArtifactGraphSnapshotStore["
+        + "snapshots="
+        + snapshots
+        + ", generations="
+        + generations
+        + ", observations="
+        + observations
+        + ", capturePairs="
+        + capturePairs
+        + ']';
   }
 
   static ResolverArtifactGraphSnapshotStore empty() {
@@ -84,10 +133,10 @@ record ResolverArtifactGraphSnapshotStore(
     }
     final ResolverArtifactGraphSnapshotStore store =
         new ResolverArtifactGraphSnapshotStore(
-            parseSnapshots(root.get(SNAPSHOTS_FIELD)),
-            parseGenerations(root.get(GENERATIONS_FIELD)),
-            parseObservations(root.get(OBSERVATIONS_FIELD)),
-            parseCapturePairs(root.get(CAPTURE_PAIRS_FIELD)));
+            Collections.unmodifiableMap(parseSnapshots(root.get(SNAPSHOTS_FIELD))),
+            Collections.unmodifiableMap(parseGenerations(root.get(GENERATIONS_FIELD))),
+            Collections.unmodifiableMap(parseObservations(root.get(OBSERVATIONS_FIELD))),
+            Collections.unmodifiableMap(parseCapturePairs(root.get(CAPTURE_PAIRS_FIELD))));
     validateStore(store);
     return store;
   }
@@ -211,10 +260,13 @@ record ResolverArtifactGraphSnapshotStore(
 
   ResolverArtifactGraphSnapshotStore withObservation(
       final String projectKey, final PlanObservation observation) {
+    if (Objects.equals(observation, observations.get(projectKey))) {
+      return this;
+    }
     final Map<String, PlanObservation> nextObservations = new LinkedHashMap<>(observations);
     nextObservations.put(projectKey, observation);
     return new ResolverArtifactGraphSnapshotStore(
-        snapshots, generations, nextObservations, capturePairs);
+        snapshots, generations, Collections.unmodifiableMap(nextObservations), capturePairs);
   }
 
   ResolverArtifactGraphSnapshotStore append(final ResolverArtifactGraphSnapshot snapshot) {
@@ -250,10 +302,10 @@ record ResolverArtifactGraphSnapshotStore(
     }
     final List<Map<String, Object>> current = snapshots.getOrDefault(projectKey, List.of());
     final List<Map<String, Object>> currentPairs = capturePairs.getOrDefault(projectKey, List.of());
-    final Map<String, Object> pairPayload = pair.toPayload();
+    final Map<String, Object> pairPayload = immutableMap(pair.toPayload());
     final Map<String, List<Map<String, Object>>> nextSnapshots = new LinkedHashMap<>(snapshots);
     final List<Map<String, Object>> updatedSnapshots = new ArrayList<>(current);
-    updatedSnapshots.add(afterPayload);
+    updatedSnapshots.add(immutableMap(afterPayload));
     nextSnapshots.put(projectKey, List.copyOf(updatedSnapshots));
     final Map<String, List<Map<String, Object>>> nextPairs = new LinkedHashMap<>(capturePairs);
     final List<Map<String, Object>> updatedPairs = new ArrayList<>(currentPairs);
@@ -262,13 +314,10 @@ record ResolverArtifactGraphSnapshotStore(
     final Map<String, Long> nextGenerations = new LinkedHashMap<>(generations);
     nextGenerations.put(projectKey, pair.captureGeneration());
     return new ResolverArtifactGraphSnapshotStore(
-        nextSnapshots, nextGenerations, observations, nextPairs);
-  }
-
-  List<ResolverArtifactGraphCapturePair> capturePairs(final String projectKey) {
-    return capturePairs.getOrDefault(projectKey, List.of()).stream()
-        .map(ResolverArtifactGraphCapturePair::fromPayload)
-        .toList();
+        Collections.unmodifiableMap(nextSnapshots),
+        Collections.unmodifiableMap(nextGenerations),
+        observations,
+        Collections.unmodifiableMap(nextPairs));
   }
 
   Map<String, Object> toPayload() {
@@ -363,15 +412,18 @@ record ResolverArtifactGraphSnapshotStore(
     for (int index = 0; index < entries.size(); index++) {
       final Map<String, Object> entry = entries.get(index);
       final long expectedGeneration = index + 1L;
-      ResolverArtifactGraphSnapshotPayloadValidator.validate(entry, projectKey);
       if (!Long.valueOf(expectedGeneration).equals(entry.get("captureGeneration"))) {
         throw new IllegalStateException("Graph snapshot capture generations are inconsistent");
       }
+      final Map<String, Object> pairPayload = pairs.get(index);
+      if (!entry.equals(pairPayload.get("after"))) {
+        ResolverArtifactGraphSnapshotPayloadValidator.validate(entry, projectKey);
+        throw new IllegalStateException("Graph capture pair provenance is inconsistent");
+      }
       final ResolverArtifactGraphCapturePair pair =
-          ResolverArtifactGraphCapturePair.fromPayload(pairs.get(index));
+          ResolverArtifactGraphCapturePair.fromPayload(pairPayload);
       if (!pair.projectKey().equals(projectKey)
           || pair.captureGeneration() != expectedGeneration
-          || !pair.after().toPayload().equals(entry)
           || !captureTokens.add(pair.captureToken())) {
         throw new IllegalStateException("Graph capture pair provenance is inconsistent");
       }
