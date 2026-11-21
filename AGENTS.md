@@ -61,6 +61,7 @@
 - When implementing optimizations that use custom code, hand-rolled parsing, or memory/layout tricks instead of standard library or layered APIs:
   1. Write differential tests (preferably property-based) verifying that the optimized implementation produces identical results and error behavior to the reference library/layered implementation across both normal and edge-case inputs.
   2. Add JMH benchmarks in `elider-benchmarks` comparing the old and optimized implementations to prove the new code is actually faster. Keep the old implementation around as verbatim as possible in a reference class next to the JMH benchmark (outside production code) so it can still be benchmarked as the code was.
+  3. Verify comparative benchmarks across all measured dimensions—wall-clock time per operation, total JVM process CPU time per operation (`process.cpu.time.norm`), normalized heap allocation (`gc.alloc.rate.norm`), and GC pause work (`gc.time` / `gc.count`)—via `make verify-benchmarks` (`BenchmarkComparisonVerifier`). Any regression on any dimension may only be accepted after explicit user approval.
 
 ## Inner-loop verification
 

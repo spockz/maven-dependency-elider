@@ -107,16 +107,11 @@ public class MavenTrimCacheBenchmark {
     }
   }
 
-  /** Warms a fresh session before each measured invocation. */
+  /** Creates a fresh session analysis before each measured invocation. */
   @Setup(Level.Invocation)
   public void prepareFreshInvocation()
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     freshSessionAnalysis = analysis(newSession(), trace);
-    final TrimResult freshWarm = trim(freshSessionAnalysis);
-    if (freshWarm.analysisRuns() != 0 || freshWarm.cacheHits() != 1) {
-      throw new IllegalStateException(
-          "Fresh Maven session did not reuse the production trim cache");
-    }
   }
 
   /** Runs exact input/output digest validation and returns the cached trim records. */
@@ -126,11 +121,23 @@ public class MavenTrimCacheBenchmark {
     return trim(warmedAnalysis);
   }
 
-  /** Runs the same cache hit with a fresh single-project Maven execution request. */
+  /** Runs cache-hit trimming on a pre-analyzed fresh Maven session. */
   @Benchmark
-  public TrimResult validatedFreshMavenTrimCacheHit()
+  public TrimResult preparedAnalysisFreshSessionCacheHit()
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     return trim(freshSessionAnalysis);
+  }
+
+  /** Measures full fresh-request analysis preparation plus validated trim cache hit. */
+  @Benchmark
+  public TrimResult freshRequestLifecycleCacheHit()
+      throws IOException, org.apache.maven.plugin.MojoFailureException {
+    final ElisionAnalysisModel.EffectiveAnalysis analysis = analysis(newSession(), trace);
+    final TrimResult result = trim(analysis);
+    if (result.analysisRuns() != 0 || result.cacheHits() != 1) {
+      throw new IllegalStateException("Fresh lifecycle request did not hit the trim cache");
+    }
+    return result;
   }
 
   /** Removes the trial JAR and cache outputs after measurement. */
