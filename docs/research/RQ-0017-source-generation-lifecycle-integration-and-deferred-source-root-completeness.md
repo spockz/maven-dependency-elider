@@ -235,3 +235,63 @@ and lifecycle integration tests exercise the extension-driven phase rebind, late
 preparation, and final package behavior. See [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md)
 for the accepted lifecycle contract and [RQ-0020](RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md)
 for the real-package evidence and its limits.
+
+## 10. Proposed test-only dependency view: 2026-11-21
+
+[ADR-0016](../adr/0016-test-compilation-and-isolated-test-runtime-views.md) proposes revisiting the historical test-only guidance in §2.3: compile tests against allowed original mediated inputs, then analyze test bytecode and supply needed additions only to the test runtime. Production trimming, package resolution and production evidence remain separate. The ADR records the Maven source investigation, two candidate compiler-view integrations and the lifecycle proof required to select one. In Maven 3.9.9 the compiler Mojo is configured before `MojoExecutionListener.beforeMojoExecution`, so that callback alone cannot change its already injected test classpath. Tests must demonstrate phase and resolver behavior on real Maven invocations, including direct/partial goals and failure paths; the proposal is not yet implemented, and the experiment below verifies only a narrow simulation. Track resolver-view findings in [RQ-0006](RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md) and module-path issues in [RQ-0018](RQ-0018-jpms-module-awareness-and-assisted-modularization.md).
+
+## 11. Local Maven view experiment: 2026-11-21
+
+An isolated experiment tested the execution-listener route proposed in [ADR-0016](../adr/0016-test-compilation-and-isolated-test-runtime-views.md). These are observations from a **test-only simulation**, not implementation of Elider or completion of its lifecycle gate. The complete fixture source, observed logs, original command file and component descriptor are preserved in this checkout's ignored `.scratch/adr0016-maven-view-proof/`; the executed working copy was `/tmp/maven-view-proof/`. The `.scratch` copy and the original local Maven cache are environment-local and are not a published test fixture.
+
+The run used Maven 3.9.11, JDK 21.0.12, Maven Compiler Plugin 3.13.0, Surefire 3.5.2 and Shade 3.6.0. Those versions describe this observation, not a required JDK vendor, patch or general compatibility guarantee. The fixture declares a real compile-scope `fixture:lib:1` and a test-scope JUnit dependency. `original.jar` contains `demo.Client`, `demo.Builder` and `demo.Helper`; `trimmed.jar` contains only `Client`; `overlay.jar` contains `Builder` and `Helper`. The app calls `Client`; the JUnit test calls `Builder`, which calls `Helper`, and checks the actual code-source URLs for the retained production and overlay classes.
+
+The experimental extension, loaded using `-Dmaven.ext.class.path`, registers an `AbstractMavenLifecycleParticipant` using a Plexus component descriptor. Its `afterSessionStart` chains the session's existing execution listener. After production compilation succeeds it simulates elision by changing the resolved library artifact file to `trimmed.jar`. On `mojoStarted` for `maven-compiler-plugin:testCompile`, it temporarily changes that file to `original.jar`; on `mojoSucceeded` and `mojoFailed` for that compiler goal, it restores `trimmed.jar`. On `mojoStarted` for `maven-surefire-plugin:test`, it appends `overlay.jar` to the selected `MojoExecution`'s `additionalClasspathElements` configuration. The extension logs each transition and delegates to Maven's previous listener. The proxy, hard-coded goal checks and paths are probe code, not a proposed production API.
+
+| Run | Actual observation |
+| :--- | :--- |
+| `clean test` with `-Dprobe.disabled=true` | Expected build failure: `testCompile` sees `trimmed.jar` and cannot find `Builder`. |
+| `clean package` with both switches | Build succeeds; one JUnit test passes and verifies `Client` came from `trimmed.jar` and `Builder` from `overlay.jar`. Shade receives `trimmed.jar`; inspection of the resulting application JAR finds `demo/App.class` and `demo/Client.class`, but not `Builder` or `Helper`. |
+| `clean test` with `-Dprobe.noOverlay=true` | Test compilation succeeds against `original.jar`, then Surefire fails with `NoClassDefFoundError: demo/Builder`. |
+| `clean test` with a deliberate unrelated invalid test source | Test compilation fails after the original switch and the listener logs restoration of `trimmed.jar` on `mojoFailed`. |
+| `clean package dependency:build-classpath` and a separate `clean package dependency:tree` | Later plugin execution logs show the trimmed project artifact; `build-classpath` contains the trimmed path and the tree lists the original compile coordinate. These observations do **not** establish an independently fresh resolver request. |
+
+The observed command setup and exact invocations are in `.scratch/adr0016-maven-view-proof/commands.txt`; the six corresponding logs are `baseline.log`, `success.log`, `no-overlay.log`, `compiler-failure.log`, `resolution.log` and `tree.log` in the same directory. `classpath.txt` preserves the later dependency-plugin classpath, and `shaded-jar-contents.txt` preserves the inspected package entry list. The original working copy's `build.sh` is specific to `/tmp/maven-view-proof`, a local JDK/Maven installation and a cached repository; reproducing elsewhere requires choosing a compliant local JDK, Maven installation and seeded local repository, then adapting those paths. Seeded plugins and JUnit allowed the experiment to run Maven with `-o`; no live external service was needed. The fixture's app POM, extension source and service descriptor are preserved with the logs so an implementor can port the probe into the repository's real Maven integration harness.
+
+The original working directory already contained the Plexus descriptor. The preserved `build.sh` does **not** create it, so a fresh reconstruction must copy the descriptor into the compiled extension's output directory before running that script; otherwise the JAR will not register the extension. With the preserved fixture copied to `/tmp/maven-view-proof` and a local repository prepared, run:
+
+```sh
+mkdir -p /tmp/maven-view-proof/extclasses/META-INF/plexus
+cp .scratch/adr0016-maven-view-proof/components.xml \
+  /tmp/maven-view-proof/extclasses/META-INF/plexus/components.xml
+/tmp/maven-view-proof/build.sh
+```
+
+The existing `build.sh` hardcodes the observed JDK and Maven installation paths; update its local working copy for another installation. Confirm that Maven logs `PROBE registered` before interpreting any result.
+
+For example, after preparing the working copy, extension JAR and seeded local repository as described in that command file, the following reproduce the two principal cases; `probe_maven` is the chosen Maven executable and `JAVA_HOME` points to the chosen JDK:
+
+```sh
+"$probe_maven" -o -f /tmp/maven-view-proof/app/pom.xml \
+  -Dmaven.repo.local=/tmp/maven-view-proof/repo \
+  -Dmaven.ext.class.path=/tmp/maven-view-proof/hook.jar \
+  -Dprobe.disabled=true clean test
+
+"$probe_maven" -o -f /tmp/maven-view-proof/app/pom.xml \
+  -Dmaven.repo.local=/tmp/maven-view-proof/repo \
+  -Dmaven.ext.class.path=/tmp/maven-view-proof/hook.jar clean package
+```
+
+The first command is expected to exit nonzero at test compilation; the second is expected to exit zero. The fixture is seeded by compiling the probe against Maven's `lib/*`, registering it under `META-INF/plexus/components.xml`, compiling `Client`, `Builder` and `Helper`, writing three JARs as described above, and placing the original dependency and its POM in the local repository. The preserved `build.sh`, `components.xml`, `extsrc`, `libsrc` and `app` directory show those exact inputs. Verify the post-test shaded JAR with `jar tf` and the class-origin assertions, not just Maven's exit status.
+
+### Follow-up work package
+
+1. Turn the simulation into a failing real-Elider test using the staged builder, helper and a second wholly dropped test-only artifact in `DependencyContextLifecycleIT` or a focused `ADR0016TestViewIT`. Run actual `process-classes` trimming, not the probe's simulated `compile` callback; verify the selected builder is physically absent from the retained production JAR.
+2. Port only the proven listener timing into the lifecycle extension after deciding a supported registration and listener-chaining approach. Reuse the actual post-mediation, post-ban original inventory. Verify callback behavior before Mojo injection and restoration for success, checked failure, partial/direct goals, multiple executions and user listener coexistence. Preserve both Maven artifact sets and the detached production resolver projection.
+3. Replace the hand-built overlay with existing test-root graph and fixed-point closure analysis; assert that a method body in `Builder` reaches `Helper` and the second artifact. Inject the generated paths into the actual Surefire execution before it is configured, preserve user-specified entries and test multiple Surefire executions. Handle dynamic roots and unsupported archive semantics as specified in ADR-0016.
+4. Prove packaging and resolver isolation with the **real** `ResolverArtifactPlanPublisher`, `EliderRepositorySessionDecorator` and a genuinely separate `ProjectDependenciesResolver.resolve` request after test execution. Start with the existing `PostElideProbeMojo`, ensure the request uses the live production session and reaches the decorator, and assert paths, digests, coordinates, graph topology and final Shade entries. The dependency-plugin result above is useful evidence but is not that proof. Compare separate clean `maven.test.skip`, `skipTests` and test-running builds, and retain existing production SBOM/VEX and ban semantics.
+5. Add cache and stale-output tests, ordinary user test dependencies, duplicate identities, test processor/generated output, direct goals, failure and skip paths, reactor scope and applicable module/multi-release boundaries. Record which cases are supported; report unsupported configurations instead of silently exposing original dependencies to packaging. Follow the exact TDD and verification steps in ADR-0016 and only then update user documentation, FAQ and reproducible examples.
+
+After the real-Elider isolation proof and before production integration, record the selected hook, activation and extension requirements, supported Maven/compiler/runner versions, unsupported and direct-invocation behavior, test-report persistence/replay and fallback boundaries in ADR-0016. The local probe does not decide those implementation contracts.
+
+Still unverified by this probe: Elider's actual resolver decorator and graph, an independent fresh resolution request, multiple compiler/Surefire executions, preexisting Surefire entries, mixed/direct/partial goal ordering, process interruption and unchecked failures, Maven or JDK portability, reactor and JPMS behavior, whole-artifact drops, generated or reflective test roots, actual overlay generation, bans and Maven mediation, stale inputs, and test skip settings.

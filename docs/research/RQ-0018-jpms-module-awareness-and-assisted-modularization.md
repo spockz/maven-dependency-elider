@@ -268,6 +268,10 @@ The proposed `target/dependency-elider-jdk-modules.txt` is not an existing outpu
 * [ ] Native-image and linked-JRE claims each have their own build/runtime checks. VEX claims require their independent code-presence/reachability evidence.
 * [ ] A classpath-only descriptor-removal experiment preserves classpath services/resources, keeps original dependency bytes intact, rejects unsupported modular use, and records its output contract in identity and provenance. Descriptor-preserving experiments additionally validate module resolution and services.
 
+## 2026-11-19: System modules from explicitly supplied runtimes
+
+[ADR-0015 slice 2](../adr/0015-forbidden-code-policy-and-evidence-bounded-cve-assessment.md#slice-2-shared-target-runtime-platform-for-analysis-and-trimming) requires analysis of application module requirements and their system-module dependencies against each explicitly supplied runtime image. Investigate portable image inspection and standard JPMS resolution, including transitive and optional requirements, service binding and deployment-supplied module options, while keeping incomplete graphs conservative. This planned runtime-system-module support does not establish general module-path resolution, module-descriptor rewriting, or modular trimming for arbitrary dependency JARs; those remain separate questions above. Classpath applications continue to require conservative system-module coverage.
+
 Share immutable fixtures and expensive runs across compatible assertions, using `assertAll` to preserve independent failures. Keep runs separate when runtime mode, classpath, profile, or lifecycle changes.
 
 ### 6.2 Measure the Combined Benefit
