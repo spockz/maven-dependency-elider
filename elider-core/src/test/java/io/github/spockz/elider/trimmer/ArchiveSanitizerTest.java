@@ -17,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -34,9 +36,14 @@ import proguard.classfile.ClassPool;
   "PMD.LawOfDemeter",
   "PMD.TooManyMethods",
   "PMD.CommentDefaultAccessModifier",
-  "PMD.AvoidDuplicateLiterals"
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.CouplingBetweenObjects"
 })
 class ArchiveSanitizerTest {
+  /** Cached compiled class bytes keyed by secondary fixture class name. */
+  private static final Map<String, Map<String, byte[]>> COMPILED_CLASSES =
+      new ConcurrentHashMap<>();
+
   /** Identifies the digest algorithm used to bind replacement JARs to their analysis. */
   private static final String SHA_256 = "SHA-256";
 
@@ -66,7 +73,7 @@ class ArchiveSanitizerTest {
 
   @BeforeAll
   static void loadPlatformClasses() throws IOException {
-    jdkClassTable = new JdkApiClassTableReader().read();
+    jdkClassTable = new JdkApiClassTableReader().readFrozen();
   }
 
   @Test
@@ -288,29 +295,16 @@ class ArchiveSanitizerTest {
 
   private Path createCandidateJar(final String jarName, final String secondClassName)
       throws IOException {
-    final Path sourceRoot = temporaryDirectory.resolve(jarName + "-sources");
-    final Path packageDirectory = sourceRoot.resolve("fixture");
-    final Path classes = temporaryDirectory.resolve(jarName + "-classes");
-    Files.createDirectories(packageDirectory);
-    Files.createDirectories(classes);
-    Files.writeString(
-        packageDirectory.resolve("Keep.java"), "package fixture; public class Keep {}\n");
-    Files.writeString(
-        packageDirectory.resolve(secondClassName + ".java"),
-        "package fixture; public class " + secondClassName + " {}\n");
-    CompilationFixtureSupport.compile(
-        classes,
-        List.of(
-            packageDirectory.resolve("Keep.java"),
-            packageDirectory.resolve(secondClassName + ".java")));
+    final Map<String, byte[]> compiled =
+        COMPILED_CLASSES.get(secondClassName) != null
+            ? COMPILED_CLASSES.get(secondClassName)
+            : compileCandidateClasses(jarName, secondClassName);
 
     final Path jar = temporaryDirectory.resolve(jarName);
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar))) {
       writeEntry(output, "META-INF/MANIFEST.MF", manifestBytes());
-      try (Stream<Path> classFiles = Files.list(classes.resolve("fixture"))) {
-        for (final Path classFile : classFiles.toList()) {
-          writeEntry(output, "fixture/" + classFile.getFileName(), Files.readAllBytes(classFile));
-        }
+      for (final Map.Entry<String, byte[]> entry : compiled.entrySet()) {
+        writeEntry(output, entry.getKey(), entry.getValue());
       }
       writeEntry(
           output,
@@ -328,6 +322,34 @@ class ArchiveSanitizerTest {
       writeEntry(output, "META-INF/SIG-CUSTOM", new byte[] {4, 5, 6});
     }
     return jar;
+  }
+
+  private Map<String, byte[]> compileCandidateClasses(
+      final String jarName, final String secondClassName) throws IOException {
+    final Path sourceRoot = temporaryDirectory.resolve(jarName + "-sources");
+    final Path packageDirectory = sourceRoot.resolve("fixture");
+    final Path classes = temporaryDirectory.resolve(jarName + "-classes");
+    Files.createDirectories(packageDirectory);
+    Files.createDirectories(classes);
+    Files.writeString(
+        packageDirectory.resolve("Keep.java"), "package fixture; public class Keep {}\n");
+    Files.writeString(
+        packageDirectory.resolve(secondClassName + ".java"),
+        "package fixture; public class " + secondClassName + " {}\n");
+    CompilationFixtureSupport.compile(
+        classes,
+        List.of(
+            packageDirectory.resolve("Keep.java"),
+            packageDirectory.resolve(secondClassName + ".java")));
+    final Map<String, byte[]> compiled = new ConcurrentHashMap<>();
+    try (Stream<Path> classFiles = Files.list(classes.resolve("fixture"))) {
+      for (final Path classFile : classFiles.toList()) {
+        compiled.put("fixture/" + classFile.getFileName(), Files.readAllBytes(classFile));
+      }
+    }
+    final Map<String, byte[]> frozen = Map.copyOf(compiled);
+    COMPILED_CLASSES.putIfAbsent(secondClassName, frozen);
+    return frozen;
   }
 
   private static long classEntrySize(final Path archivePath, final String entryName)

@@ -28,6 +28,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
 /** Validates cache hits against analysis metadata and both output digests. */
+@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.TooManyMethods"})
 final class MavenElisionServiceEffectiveOutputCacheTest
     extends MavenElisionServiceEffectiveOutputSupport {
   /** Shared root included by every cache fixture. */
@@ -150,7 +151,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     fixture.mavenProject().getProperties().remove("maven.compiler.release");
     fixture.mavenProject().getProperties().setProperty("maven.compiler.source", "8");
     fixture.mavenProject().getProperties().setProperty("maven.compiler.target", "11");
-    writeMultiReleaseInput(fixture, 1);
+    writeMultiReleaseInput(fixture, 1, false, false);
     final Path trace = trace(temporaryDirectory, ENTRY_TRACE);
     final ServiceOperation targetEleven =
         operation(fixture, trace, null, true, List.of(), "vertical-shading");
@@ -215,13 +216,17 @@ final class MavenElisionServiceEffectiveOutputCacheTest
             entry.put("trimmedPhysicalEntries", entry.path("trimmedPhysicalEntries").asInt() + 1));
     assertThat(trimEffective(targetEleven).cacheHits()).isZero();
 
-    writeMultiReleaseInput(fixture, 2);
+    writeMultiReleaseInput(fixture, 2, false, false);
     final ServiceOperation changedMrInput =
         operation(fixture, trace, null, true, List.of(), "vertical-shading");
-    assertThat(trimEffective(changedMrInput).cacheHits()).isZero();
+    final TrimResult changedMrResult = trimEffective(changedMrInput);
+    final ArtifactTrimRecord revisionTwoRecord = outputRecord(changedMrResult, fixture);
+    assertThat(changedMrResult.cacheHits()).isZero();
     final String changedInputFingerprint =
         mapper.readTree(manifest.toFile()).path(FINGERPRINT_PROPERTY).asText();
     assertThat(changedInputFingerprint).isNotEqualTo(firstFingerprint);
+
+    assertMrjarInventoryInvalidation(fixture, trace, revisionTwoRecord);
 
     fixture.mavenProject().getProperties().remove("maven.compiler.source");
     fixture.mavenProject().getProperties().remove("maven.compiler.target");
@@ -257,21 +262,38 @@ final class MavenElisionServiceEffectiveOutputCacheTest
         .isEqualTo(1);
   }
 
-  private void writeMultiReleaseInput(final Fixture fixture, final int revision)
+  private void writeMultiReleaseInput(
+      final Fixture fixture,
+      final int revision,
+      final boolean includeUpperTierExtra,
+      final boolean includeTargetUnused)
       throws IOException {
     final Path source = fixture.snapshot("a").filePath();
     final Path versionedJar = temporaryDirectory.resolve("versioned-a.jar");
+    final Map<String, String> upperTierSources = new java.util.concurrent.ConcurrentHashMap<>();
+    upperTierSources.put(
+        "Entry.java",
+        "package closure.a; public class Entry { public Object make() { "
+            + "return new closure.d.Ancestor(); } }");
+    upperTierSources.put("VersionOnly.java", "package closure.a; class VersionOnly {}");
+    if (includeUpperTierExtra) {
+      upperTierSources.put("ExtraUpperTier.java", "package closure.a; class ExtraUpperTier {}");
+    }
     io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
         versionedJar,
         temporaryDirectory.resolve("versioned-a-src"),
-        Map.of(
-            "Entry.java",
-            "package closure.a; public class Entry { public Object make() { "
-                + "return new closure.d.Ancestor(); } }",
-            "VersionOnly.java",
-            "package closure.a; class VersionOnly {}"),
+        upperTierSources,
         fixture.snapshot("d").filePath(),
         17);
+    final Path targetUnusedJar = temporaryDirectory.resolve("target-unused-a.jar");
+    if (includeTargetUnused) {
+      io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
+          targetUnusedJar,
+          temporaryDirectory.resolve("target-unused-a-src"),
+          Map.of("TargetUnused.java", "package closure.a; class TargetUnused {}"),
+          null,
+          8);
+    }
     final Path rewritten = temporaryDirectory.resolve("a-mr.jar");
     final Manifest manifest;
     try (JarFile input = new JarFile(source.toFile())) {
@@ -288,8 +310,15 @@ final class MavenElisionServiceEffectiveOutputCacheTest
             "",
             Set.of(
                 "META-INF/versions/17/closure/a/Entry.class",
-                "META-INF/versions/17/closure/a/VersionOnly.class"));
+                "META-INF/versions/17/closure/a/VersionOnly.class",
+                "META-INF/versions/17/closure/a/ExtraUpperTier.class",
+                "closure/a/TargetUnused.class"));
         copyEntries(versioned, output, "META-INF/versions/17/", Set.of());
+        if (includeTargetUnused) {
+          try (JarFile unused = new JarFile(targetUnusedJar.toFile())) {
+            copyEntries(unused, output, "", Set.of());
+          }
+        }
       }
     }
     Files.move(rewritten, source, StandardCopyOption.REPLACE_EXISTING);
@@ -328,6 +357,85 @@ final class MavenElisionServiceEffectiveOutputCacheTest
   private void assertCacheMiss(final ElisionAnalysisModel.EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
     assertThat(MavenDependencyTrimmer.trimEffectiveOutputs(effective).cacheHits()).isZero();
+  }
+
+  private void assertMrjarInventoryInvalidation(
+      final Fixture fixture, final Path trace, final ArtifactTrimRecord baselineRecord)
+      throws IOException, MojoFailureException {
+    final String upperTierEntry = "META-INF/versions/17/closure/a/ExtraUpperTier.class";
+    writeMultiReleaseInput(fixture, 2, true, false);
+    final boolean upperTierPresentInInput;
+    try (JarFile inputJar = new JarFile(fixture.snapshot("a").filePath().toFile())) {
+      upperTierPresentInInput = inputJar.getEntry(upperTierEntry) != null;
+    }
+    final ServiceOperation upperTierOperation =
+        operation(fixture, trace, null, true, List.of(), "vertical-shading");
+    final TrimResult upperTierResult = trimEffective(upperTierOperation);
+    final ArtifactTrimRecord upperTierRecord = outputRecord(upperTierResult, fixture);
+    final ArtifactDigests expectedUpperTierDigests =
+        ArtifactDigests.read(fixture.snapshot("a").filePath());
+    final boolean upperTierPreservedInOutput;
+    try (JarFile upperOutputJar = new JarFile(upperTierRecord.trimmedPath().toFile())) {
+      upperTierPreservedInOutput = upperOutputJar.getEntry(upperTierEntry) != null;
+    }
+
+    final String targetUnusedEntry = "closure/a/TargetUnused.class";
+    writeMultiReleaseInput(fixture, 2, false, true);
+    final boolean targetUnusedPresentInInput;
+    try (JarFile inputJar = new JarFile(fixture.snapshot("a").filePath().toFile())) {
+      targetUnusedPresentInInput = inputJar.getEntry(targetUnusedEntry) != null;
+    }
+    final ServiceOperation targetUnusedOperation =
+        operation(fixture, trace, null, true, List.of(), "vertical-shading");
+    final TrimResult targetUnusedResult = trimEffective(targetUnusedOperation);
+    final ArtifactTrimRecord targetUnusedRecord = outputRecord(targetUnusedResult, fixture);
+    final ArtifactDigests expectedTargetUnusedDigests =
+        ArtifactDigests.read(fixture.snapshot("a").filePath());
+    final boolean targetUnusedRemovedFromOutput;
+    try (JarFile targetOutputJar = new JarFile(targetUnusedRecord.trimmedPath().toFile())) {
+      targetUnusedRemovedFromOutput = targetOutputJar.getEntry(targetUnusedEntry) == null;
+    }
+
+    assertAll(
+        "MRJAR upper-tier preservation and target-tier trimming on inventory change",
+        () -> assertTrue(upperTierPresentInInput, "added upper-tier entry must exist in input"),
+        () ->
+            org.junit.jupiter.api.Assertions.assertEquals(
+                0, upperTierResult.cacheHits(), "upper-tier inventory change should miss cache"),
+        () ->
+            org.junit.jupiter.api.Assertions.assertEquals(
+                expectedUpperTierDigests.sha256(),
+                upperTierRecord.originalSha256(),
+                "upper-tier provenance should match updated MRJAR SHA-256"),
+        () ->
+            assertTrue(
+                upperTierRecord.totalClasses() > baselineRecord.totalClasses(),
+                "upper-tier addition should increase totalClasses"),
+        () ->
+            assertTrue(
+                upperTierPreservedInOutput,
+                "above-target versioned entry should be preserved in published output"),
+        () ->
+            assertTrue(
+                targetUnusedPresentInInput, "added target-visible entry must exist in input"),
+        () ->
+            org.junit.jupiter.api.Assertions.assertEquals(
+                0,
+                targetUnusedResult.cacheHits(),
+                "target-tier inventory change should miss cache"),
+        () ->
+            org.junit.jupiter.api.Assertions.assertEquals(
+                expectedTargetUnusedDigests.sha256(),
+                targetUnusedRecord.originalSha256(),
+                "target-tier provenance should match updated MRJAR SHA-256"),
+        () ->
+            assertTrue(
+                targetUnusedRecord.totalClasses() > baselineRecord.totalClasses(),
+                "target-visible addition should increase totalClasses"),
+        () ->
+            assertTrue(
+                targetUnusedRemovedFromOutput,
+                "unreferenced target-visible entry should be removed from published output"));
   }
 
   private JsonNode effectiveReportEnvironment(

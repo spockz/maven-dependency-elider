@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.BeforeAll;
@@ -37,9 +38,14 @@ import proguard.classfile.ClassPool;
   "PMD.CyclomaticComplexity",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.CommentDefaultAccessModifier",
-  "PMD.CouplingBetweenObjects"
+  "PMD.CouplingBetweenObjects",
+  "PMD.GodClass"
 })
 class DependencyJarTrimmerTest {
+  /** Cached compiled fixture classes keyed by omitGhost flag. */
+  private static final Map<Boolean, Map<String, byte[]>> COMPILED_FIXTURES =
+      new ConcurrentHashMap<>();
+
   /** Test source package prefix. */
   private static final String SOURCE_ROOT = "package fixture; ";
 
@@ -54,7 +60,7 @@ class DependencyJarTrimmerTest {
 
   @BeforeAll
   static void readRuntimeApi() throws IOException {
-    jdkClassTable = new JdkApiClassTableReader().read();
+    jdkClassTable = new JdkApiClassTableReader().readFrozen();
     assertThat(jdkClassTable.getClass("java/lang/Object")).isNotNull();
   }
 
@@ -521,13 +527,52 @@ class DependencyJarTrimmerTest {
   }
 
   private Path compileFixtureJar(final boolean omitGhost) throws IOException {
-    final Path sourceDirectory = temporaryDirectory.resolve(omitGhost ? "unresolved-src" : "src");
     final Path outputDirectory =
         temporaryDirectory.resolve(omitGhost ? "unresolved-classes" : "classes");
     fixtureOutputDirectory = outputDirectory;
+    Files.createDirectories(outputDirectory);
+    final Map<String, byte[]> cached = COMPILED_FIXTURES.get(omitGhost);
+    if (cached != null) {
+      for (final Map.Entry<String, byte[]> entry : cached.entrySet()) {
+        final Path target = outputDirectory.resolve(entry.getKey());
+        Files.createDirectories(target.getParent());
+        Files.write(target, entry.getValue());
+      }
+    } else {
+      compileFreshFixtureClasses(omitGhost, outputDirectory);
+    }
+    final Path jarPath = temporaryDirectory.resolve(omitGhost ? "unresolved.jar" : "candidate.jar");
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarPath));
+        java.util.stream.Stream<Path> classFiles = Files.walk(outputDirectory)) {
+      for (final Path classFile :
+          classFiles.filter(path -> path.toString().endsWith(".class")).toList()) {
+        if (omitGhost && "Ghost.class".equals(classFile.getFileName().toString())) {
+          continue;
+        }
+        if (classFile.toString().contains("fixture/lib/")) {
+          continue;
+        }
+        if (classFile.toString().contains("org/objectweb/asm/")) {
+          continue;
+        }
+        final String entryName =
+            outputDirectory
+                .relativize(classFile)
+                .toString()
+                .replace(java.io.File.separatorChar, '/');
+        output.putNextEntry(new JarEntry(entryName));
+        Files.copy(classFile, output);
+        output.closeEntry();
+      }
+    }
+    return jarPath;
+  }
+
+  private void compileFreshFixtureClasses(final boolean omitGhost, final Path outputDirectory)
+      throws IOException {
+    final Path sourceDirectory = temporaryDirectory.resolve(omitGhost ? "unresolved-src" : "src");
     Files.createDirectories(sourceDirectory.resolve("fixture"));
     Files.createDirectories(sourceDirectory.resolve("fixture/lib"));
-    Files.createDirectories(outputDirectory);
     Files.writeString(
         sourceDirectory.resolve("fixture/Ghost.java"), SOURCE_ROOT + "public class Ghost {}");
     Files.createDirectories(sourceDirectory.resolve("org/objectweb/asm"));
@@ -650,31 +695,19 @@ class DependencyJarTrimmerTest {
             sourceDirectory.resolve("org/objectweb/asm/ClassVisitor.java"));
     CompilationFixtureSupport.compile(outputDirectory, sourcesList);
     Files.write(outputDirectory.resolve("fixture/CondyUse.class"), condyUseClass());
-    final Path jarPath = temporaryDirectory.resolve(omitGhost ? "unresolved.jar" : "candidate.jar");
-    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarPath));
-        java.util.stream.Stream<Path> classFiles = Files.walk(outputDirectory)) {
+    final Map<String, byte[]> compiled = new ConcurrentHashMap<>();
+    try (java.util.stream.Stream<Path> classFiles = Files.walk(outputDirectory)) {
       for (final Path classFile :
           classFiles.filter(path -> path.toString().endsWith(".class")).toList()) {
-        if (omitGhost && "Ghost.class".equals(classFile.getFileName().toString())) {
-          continue;
-        }
-        if (classFile.toString().contains("fixture/lib/")) {
-          continue;
-        }
-        if (classFile.toString().contains("org/objectweb/asm/")) {
-          continue;
-        }
-        final String entryName =
+        final String key =
             outputDirectory
                 .relativize(classFile)
                 .toString()
                 .replace(java.io.File.separatorChar, '/');
-        output.putNextEntry(new JarEntry(entryName));
-        Files.copy(classFile, output);
-        output.closeEntry();
+        compiled.put(key, Files.readAllBytes(classFile));
       }
     }
-    return jarPath;
+    COMPILED_FIXTURES.putIfAbsent(omitGhost, Map.copyOf(compiled));
   }
 
   private Path writeRetainedJar(final Path candidateJar, final Set<String> retainedNames)

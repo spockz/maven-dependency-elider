@@ -395,7 +395,7 @@ public final class ClosedWorldTestFixtures {
 
   private static ClassPool readRuntimeApi() {
     try {
-      return new JdkApiClassTableReader().read();
+      return new JdkApiClassTableReader().readFrozen();
     } catch (final IOException exception) {
       throw new ExceptionInInitializerError(exception);
     }

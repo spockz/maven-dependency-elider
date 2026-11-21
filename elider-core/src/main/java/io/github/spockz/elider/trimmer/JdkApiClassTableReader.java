@@ -49,6 +49,13 @@ public final class JdkApiClassTableReader {
     return jdkClassTable;
   }
 
+  /** Returns a frozen, read-only JDK class table from the active runtime. */
+  public ClassPool readFrozen() throws IOException {
+    try (JdkPlatformContext context = new JdkPlatformContext()) {
+      return readFrozen(context.snapshot());
+    }
+  }
+
   /** Returns a frozen, read-only JDK class table from the platform snapshot. */
   public ClassPool readFrozen(final JdkPlatformContext.PlatformSnapshot snapshot) {
     Objects.requireNonNull(snapshot, "snapshot");
