@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.model;
 
+import io.github.spockz.elider.io.ArchiveWorkObserver;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -52,6 +53,7 @@ public final class ArtifactDigests {
   /** Reads both digest algorithms from one stable file pass. */
   public static ArtifactDigests read(final Path path) throws IOException {
     final Path normalizedPath = normalize(path);
+    ArchiveWorkObserver.recordDigestRead(normalizedPath);
     final MessageDigest sha256 = digest("SHA-256");
     final MessageDigest sha1 = digest("SHA-1");
     try (InputStream input = Files.newInputStream(path)) {

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.trimmer;
 
+import io.github.spockz.elider.io.ArchiveWorkObserver;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,6 +23,7 @@ final class MultiReleaseArchiveInventory {
   private MultiReleaseArchiveInventory() {}
 
   static ArchiveIndex read(final java.nio.file.Path source) throws IOException {
+    ArchiveWorkObserver.recordSourceInspected(source.toAbsolutePath().normalize());
     try (JarFile archive = new JarFile(source.toFile(), false, ZipFile.OPEN_READ)) {
       final ArchiveIndexBuilder builder = new ArchiveIndexBuilder(archive.getManifest());
       for (final JarEntry entry : archive.stream().toList()) {

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.model;
 
+import io.github.spockz.elider.io.ArchiveWorkObserver;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -40,6 +41,7 @@ public final class HexDigest {
 
   /** Computes the lowercase SHA-256 digest of a file in a single streaming pass. */
   public static String sha256(final Path path) throws IOException {
+    ArchiveWorkObserver.recordDigestRead(path.toAbsolutePath().normalize());
     final MessageDigest digest = sha256Digest();
     try (InputStream input = Files.newInputStream(path)) {
       final byte[] buffer = new byte[8192];
