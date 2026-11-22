@@ -8,6 +8,7 @@ import javax.inject.Named;
 import javax.inject.Singleton;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
+import org.apache.maven.execution.ExecutionListener;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
@@ -36,6 +37,13 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
   /** Required for Maven's component instantiation. */
   public EliderLifecycleParticipant() {
     super();
+  }
+
+  @Override
+  @SuppressWarnings("PMD.LawOfDemeter")
+  public void afterSessionStart(final MavenSession session) {
+    final ExecutionListener prior = session.getRequest().getExecutionListener();
+    session.getRequest().setExecutionListener(new EliderTestViewExecutionListener(session, prior));
   }
 
   @Override

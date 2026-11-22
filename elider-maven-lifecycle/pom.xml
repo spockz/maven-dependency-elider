@@ -92,6 +92,11 @@
                         <id>check-coverage</id>
                         <!-- WHY: Remaining lifecycle participant and integration paths are exercised by Maven ITs in dependency-elider-maven-plugin. -->
                         <configuration>
+                            <!-- WHY: These Maven callback and cross-realm handoff classes run in the packaged plugin ITs. -->
+                            <excludes>
+                                <exclude>io/github/spockz/elider/plugin/EliderTestViewExecutionListener*</exclude>
+                                <exclude>io/github/spockz/elider/plugin/EliderTestViewPlan*</exclude>
+                            </excludes>
                             <rules>
                                 <rule>
                                     <element>BUNDLE</element>

@@ -106,6 +106,9 @@ final class FixtureResolvedGraphSnapshot {
       return;
     }
     final Path path = file.toPath().toAbsolutePath().normalize();
+    if ("n0".equals(nodeId) && Files.isDirectory(path)) {
+      return;
+    }
     if (!Files.isRegularFile(path)) {
       throw new IOException("Resolved TEST artifact is not a file: " + path);
     }

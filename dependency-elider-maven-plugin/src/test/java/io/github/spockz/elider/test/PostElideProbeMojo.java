@@ -4,6 +4,7 @@ package io.github.spockz.elider.test;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Locale;
 import javax.inject.Inject;
 import javax.inject.Named;
 import org.apache.maven.execution.MavenSession;
@@ -17,13 +18,16 @@ import org.apache.maven.project.DependencyResolutionException;
 import org.apache.maven.project.DependencyResolutionResult;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
+import org.eclipse.aether.SessionData;
 import org.eclipse.aether.util.artifact.JavaScopes;
 import org.eclipse.aether.util.filter.DependencyFilterUtils;
 
 /** Captures the post-elide view and resolves unchanged project declarations again. */
-@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentRequired"})
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentRequired", "PMD.LawOfDemeter"})
 @Mojo(name = "post-elide-probe", requiresDependencyResolution = ResolutionScope.TEST)
 public final class PostElideProbeMojo extends AbstractMojo {
+  private static final String PROBE_REQUEST_KEY = "io.github.spockz.elider.test.probe-request";
+
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
 
@@ -32,6 +36,9 @@ public final class PostElideProbeMojo extends AbstractMojo {
 
   @Parameter(defaultValue = "${lifecycle.reportDirectory}")
   private File reportDirectory;
+
+  @Parameter(defaultValue = "${lifecycle.resolutionScope}")
+  private String resolutionScope;
 
   @Inject
   @Named("default")
@@ -48,10 +55,25 @@ public final class PostElideProbeMojo extends AbstractMojo {
       FixtureArtifactViews.write(project, reportDirectory, "post-elide", "TEST");
       final DefaultDependencyResolutionRequest request =
           new DefaultDependencyResolutionRequest(project, session.getRepositorySession());
-      request.setResolutionFilter(DependencyFilterUtils.classpathFilter(JavaScopes.TEST));
-      final DependencyResolutionResult result = resolver.resolve(request);
+      final String selectedScope =
+          "COMPILE".equals(resolutionScope) ? JavaScopes.COMPILE : JavaScopes.TEST;
+      request.setResolutionFilter(DependencyFilterUtils.classpathFilter(selectedScope));
+      final SessionData data = session.getRepositorySession().getData();
+      final Object previousProbeRequest = data.get(PROBE_REQUEST_KEY);
+      data.set(PROBE_REQUEST_KEY, Boolean.TRUE);
+      final DependencyResolutionResult result;
+      try {
+        result = resolver.resolve(request);
+      } finally {
+        data.set(PROBE_REQUEST_KEY, previousProbeRequest);
+      }
       if (getLog().isInfoEnabled()) {
-        getLog().info("EXPLICIT_TEST_RESOLUTION filter=TEST project=" + project.getArtifactId());
+        getLog()
+            .info(
+                "EXPLICIT_TEST_RESOLUTION filter="
+                    + selectedScope.toUpperCase(Locale.ROOT)
+                    + " project="
+                    + project.getArtifactId());
       }
       FixtureResolvedGraphSnapshot.writeGraph(reportDirectory, result.getDependencyGraph());
       FixtureResolvedGraphSnapshot.writeDependencies(

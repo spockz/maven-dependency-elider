@@ -53,6 +53,7 @@
         <module>../helper-plugin</module>
         <module>../resolver-extension</module>
         <module>../plan-seed-extension</module>
+        <module>../test-view-extension</module>
         <module>../libraries</module>
     </modules>
 </project>

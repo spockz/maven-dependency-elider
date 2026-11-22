@@ -17,5 +17,7 @@
     <modules>
         <module>drop-library</module>
         <module>keep-library</module>
+        <module>test-view-library</module>
+        <module>test-only-library</module>
     </modules>
 </project>

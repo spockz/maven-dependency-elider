@@ -52,4 +52,15 @@
     <Class name="io.github.spockz.elider.trimmer.PreparedAnalysisState$ClosureTraversal" />
     <Method name="visit" />
   </Match>
+  <!-- WHY: Callback and view-switch failures must restore production state, then retain their runtime cause. -->
+  <Match>
+    <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+    <Class name="io.github.spockz.elider.plugin.EliderTestViewExecutionListener" />
+    <Method name="mojoStarted" />
+  </Match>
+  <Match>
+    <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+    <Class name="io.github.spockz.elider.plugin.EliderTestViewExecutionListener" />
+    <Method name="beginCompilerView" />
+  </Match>
 </FindBugsFilter>

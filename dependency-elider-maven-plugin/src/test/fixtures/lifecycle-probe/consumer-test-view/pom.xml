@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Exercises real production elision before test compilation, execution and Shade packaging. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>io.github.spockz.elider.test</groupId><artifactId>test-view-consumer</artifactId><version>1.0.0</version>
+    <properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+    <dependencies>
+        <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>test-view-library</artifactId><version>1.0.0</version></dependency>
+        <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>test-only-library</artifactId><version>1.0.0</version></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.11.4</version><scope>test</scope></dependency>
+    </dependencies>
+    <build><plugins>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version><configuration><additionalClasspathElements><additionalClasspathElement>${adr0016.userClasspathJar}</additionalClasspathElement></additionalClasspathElements></configuration></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.0</version><executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration><createDependencyReducedPom>false</createDependencyReducedPom></configuration></execution></executions></plugin>
+        <plugin><groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version><executions><execution><id>run-elider</id><goals><goal>elide</goal></goals><configuration><trimJars>true</trimJars><traceFiles><traceFile>${project.basedir}/trace.txt</traceFile></traceFiles></configuration></execution></executions></plugin>
+        <plugin><groupId>io.github.spockz.elider.test</groupId><artifactId>lifecycle-probe-maven-plugin</artifactId><version>1.0.0</version><executions><execution><id>after-tests</id><phase>prepare-package</phase><goals><goal>post-elide-probe</goal></goals><configuration><reportDirectory>${project.build.directory}/test-view-probe</reportDirectory><resolutionScope>COMPILE</resolutionScope></configuration></execution></executions></plugin>
+    </plugins></build>
+</project>

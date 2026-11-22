@@ -176,6 +176,8 @@ final class MavenElideExecution {
         applicationBinding == null
             ? unboundAnalysis
             : applicationBinding.bindAnalysis(unboundAnalysis);
+    final EliderTestViewPlan.Prepared testView =
+        EliderTestViewPlan.prepare(lifecycle.session(), lifecycle.project(), banPlan.requested());
     MavenElisionOutputPublisher.publish(
         new MavenElisionOutputPublisher.Request(
             lifecycle.project(),
@@ -193,6 +195,9 @@ final class MavenElideExecution {
             banPlan,
             applicationBinding,
             check == null ? List.of() : check.results()));
+    if (testView != null) {
+      EliderTestViewPlan.publish(lifecycle.session(), testView);
+    }
   }
 
   @SuppressWarnings(

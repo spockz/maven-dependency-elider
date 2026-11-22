@@ -55,6 +55,7 @@ import org.objectweb.asm.Opcodes;
 @SuppressWarnings({
   "PMD.AddEmptyString",
   "PMD.AtLeastOneConstructor",
+  "PMD.AvoidDuplicateLiterals",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.AvoidLiteralsInIfCondition",
   "PMD.CommentDefaultAccessModifier",
@@ -75,6 +76,11 @@ final class DependencyContextLifecycleIT {
   private static final String EXTENSIONS_XML = "extensions.xml";
   private static final String BUILD_SUCCESS = "BUILD SUCCESS";
   private static final String CONSUMER_ELIDE_POM = "consumer-elide/pom.xml";
+  private static final String CONSUMER_TEST_VIEW = "consumer-test-view";
+  private static final String DECORATOR_OBSERVATION =
+      "ADR0016 resolver-decorator-observer probeRequest=true planPresent=true"
+          + " reader=io.github.spockz.elider.plugin."
+          + "EliderRepositorySessionDecorator$PlannedWorkspaceReader";
 
   private static final String CONSUMER_DIRECTORY = "consumer";
   private static final String TRACE_FILE = "trace.txt";
@@ -1724,6 +1730,440 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
+  void realEliderBaselineFailsForMissingTestBuilder() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("test-view-baseline");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    Files.writeString(
+        consumer.resolve(TRACE_FILE), "io.github.spockz.elider.fixture.testview.Client\n");
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+    final String output =
+        runExpectingFailure(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("baseline.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            CLEAN_GOAL,
+            "test");
+    final Path trimmed = testViewTrimmedJar(consumer);
+    assertAll(
+        "real Elider removes the builder before Maven test compilation",
+        () ->
+            assertThat(output)
+                .contains(
+                    ELIDER_SUMMARY,
+                    "Whole artifacts dropped: 1",
+                    "cannot find symbol",
+                    "Builder",
+                    "Marker"),
+        () -> assertThat(output).contains("testCompile"),
+        () -> assertThat(trimmed).exists(),
+        () ->
+            assertThat(jarEntryNames(trimmed))
+                .contains("io/github/spockz/elider/fixture/testview/Client.class"),
+        () ->
+            assertThat(jarEntryNames(trimmed))
+                .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
+  }
+
+  @Test
+  void realEliderListenerRestoresProductionAfterTestCompilationAndPackaging() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("test-view-listener");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    final Path original = repositoryArtifact(localRepository, "test-view-library");
+    final Path droppedOriginal = repositoryArtifact(localRepository, "test-only-library");
+    final String originalHash = sha256(original);
+    final String droppedOriginalHash = sha256(droppedOriginal);
+    final Path addition = evidenceDirectory.resolve("test-additions.jar");
+    writeTestAdditions(original, droppedOriginal, addition, true);
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
+    configureTestViewConsumer(consumer);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final String noOverlay =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("no-overlay.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            "test");
+    assertAll(
+        "test compilation succeeds and omitting runtime additions fails in Surefire",
+        () -> assertThat(noOverlay).contains("Tests run: 1", "NoClassDefFoundError", "Builder"),
+        () -> assertThat(noOverlay).doesNotContain("COMPILATION ERROR"),
+        () ->
+            assertThat(noOverlay)
+                .contains("ADR0016 production-restored outcome=success value=true"));
+
+    final Path missingHelper = evidenceDirectory.resolve("test-additions-without-helper.jar");
+    writeTestAdditions(original, droppedOriginal, missingHelper, false);
+    final String noHelper =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("missing-helper.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Delide.testAdditionsJar=" + missingHelper,
+            CLEAN_GOAL,
+            "test");
+    assertAll(
+        "a restored Builder needs its transitive Helper at test runtime",
+        () -> assertThat(noHelper).contains("NoClassDefFoundError", "Helper"),
+        () -> assertThat(noHelper).doesNotContain("COMPILATION ERROR"));
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dmaven.test.additionalClasspath=" + userAddition,
+            "-Delide.testAdditionsJar=" + addition,
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final Path trimmed = testViewTrimmedJar(consumer);
+    final String trimmedHash = sha256(trimmed);
+    final Path packageJar = consumer.resolve("target/test-view-consumer-1.0.0.jar");
+    final List<String> packageEntries = jarEntryNames(packageJar);
+    final List<String> graph =
+        Files.readAllLines(
+            consumer.resolve("target/test-view-probe/graph-explicit-test-resolver.tsv"));
+    final List<String> resolved =
+        Files.readAllLines(
+            consumer.resolve(
+                "target/test-view-probe/graph-explicit-test-resolved-dependencies.tsv"));
+    final String coordinate = GROUP_ID + ":test-view-library:1.0.0:jar:";
+    final Snapshot postTests =
+        Snapshot.read(consumer.resolve("target/test-view-probe/post-elide.tsv"));
+    assertAll(
+        "real Elider keeps production resolution and Shade separate from the test runtime",
+        () ->
+            assertThat(output)
+                .contains(
+                    BUILD_SUCCESS,
+                    "ADR0016 registered chained=true",
+                    "ADR0016 compiler-original before-configuration=true",
+                    "ADR0016 production-restored outcome=success value=true",
+                    "Tests run: 1, Failures: 0",
+                    "EXPLICIT_TEST_RESOLUTION filter=COMPILE"),
+        () -> assertThat(output).contains(DECORATOR_OBSERVATION),
+        () ->
+            assertThat(jarEntryNames(trimmed))
+                .contains("io/github/spockz/elider/fixture/testview/Client.class")
+                .doesNotContain(
+                    "io/github/spockz/elider/fixture/testview/Builder.class",
+                    "io/github/spockz/elider/fixture/testview/Helper.class"),
+        () ->
+            assertThat(packageEntries)
+                .contains("app/App.class", "io/github/spockz/elider/fixture/testview/Client.class")
+                .doesNotContain(
+                    "io/github/spockz/elider/fixture/testview/Builder.class",
+                    "io/github/spockz/elider/fixture/testview/Helper.class",
+                    "io/github/spockz/elider/fixture/testview/Unused.class",
+                    "io/github/spockz/elider/fixture/testonly/Marker.class"),
+        () ->
+            assertThat(rowsWithPrefix(graph, "node\t"))
+                .contains(
+                    "node\tn0\tio.github.spockz.elider.test:test-view-consumer:1.0.0:jar:",
+                    "node\tn1\t" + coordinate)
+                .hasSize(10),
+        () -> assertThat(rowsWithPrefix(graph, "edge\t")).contains("edge\tn0\tn1").hasSize(9),
+        () ->
+            assertThat(rowsWithPrefix(graph, "resolved-artifact\t"))
+                .containsExactly(resolvedArtifactRow("n1", coordinate, trimmed, trimmedHash)),
+        () ->
+            assertThat(rowsWithPrefix(resolved, "resolved-dependency\t"))
+                .containsExactly(resolvedDependencyRow(coordinate, trimmed, trimmedHash)),
+        () ->
+            assertThat(postTests.direct().artifacts().get(coordinate).file())
+                .isEqualTo(trimmed.toString()),
+        () ->
+            assertThat(postTests.resolved().artifacts().get(coordinate).sha256())
+                .isEqualTo(trimmedHash),
+        () -> assertThat(sha256(original)).isEqualTo(originalHash),
+        () -> assertThat(sha256(droppedOriginal)).isEqualTo(droppedOriginalHash),
+        () -> assertThat(packageEntries).doesNotContain("user-classpath-marker.txt"));
+
+    final String cached =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("cached-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Delide.testAdditionsJar=" + addition,
+            PACKAGE_GOAL);
+    assertAll(
+        "a second Maven process can reuse the production trim and still isolate tests",
+        () -> assertThat(cached).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () -> assertThat(cached).contains("JAR trim cache: 1 validated hit(s)"),
+        () ->
+            assertThat(jarEntryNames(consumer.resolve("target/test-view-consumer-1.0.0.jar")))
+                .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
+  }
+
+  @Test
+  void realEliderListenerHandlesFailedCompilerPartialDirectAndSkippedLifecycles() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("test-view-boundaries");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
+    final Path addition = evidenceDirectory.resolve("test-additions.jar");
+    writeTestAdditions(
+        repositoryArtifact(localRepository, "test-view-library"),
+        repositoryArtifact(localRepository, "test-only-library"),
+        addition,
+        true);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path badSource = consumer.resolve("src/test/java/app/Broken.java");
+    Files.writeString(badSource, "package app; final class Broken { UnknownType value; }\n");
+    final String failure =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("compile-failure.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            "test");
+    assertAll(
+        "checked compiler failure restores the production project view before project failure",
+        () -> assertThat(failure).contains("UnknownType", "testCompile"),
+        () ->
+            assertThat(failure).contains("ADR0016 production-restored outcome=failure value=true"),
+        () -> assertThat(failure).contains("ADR0016 project-failed-production=true"),
+        () -> assertThat(failure).doesNotContain("NoClassDefFoundError"));
+    Files.delete(badSource);
+
+    final String partial =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("partial.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            CLEAN_GOAL,
+            "process-test-resources");
+    assertAll(
+        "a partial lifecycle never exposes the original compiler view",
+        () -> assertThat(partial).contains(BUILD_SUCCESS, ELIDER_SUMMARY),
+        () -> assertThat(partial).doesNotContain("ADR0016 compiler-original"),
+        () ->
+            assertThat(jarEntryNames(testViewTrimmedJar(consumer)))
+                .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
+
+    final Path directProbe = consumer.resolve("target/direct-probe");
+    final String direct =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("direct-goals.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Delide.testAdditionsJar=" + addition,
+            "-Dlifecycle.reportDirectory=" + directProbe,
+            "-Dlifecycle.resolutionScope=COMPILE",
+            CLEAN_GOAL,
+            PROCESS_CLASSES_PHASE,
+            "compiler:testCompile",
+            "surefire:test",
+            POST_ELIDE_PROBE_GOAL);
+    final Path directTrimmed = testViewTrimmedJar(consumer);
+    final String coordinate = GROUP_ID + ":test-view-library:1.0.0:jar:";
+    final List<String> directResolved =
+        Files.readAllLines(directProbe.resolve("graph-explicit-test-resolved-dependencies.tsv"));
+    assertAll(
+        "direct compiler, runner and appended resolver goals retain the production plan",
+        () -> assertThat(direct).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () -> assertThat(direct).contains(DECORATOR_OBSERVATION),
+        () ->
+            assertThat(rowsWithPrefix(directResolved, "resolved-dependency\t"))
+                .containsExactly(
+                    resolvedDependencyRow(coordinate, directTrimmed, sha256(directTrimmed))));
+
+    final String skipTests =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("skip-tests.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-DskipTests",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Dlifecycle.reportDirectory=" + consumer.resolve("target/skip-probe"),
+            "-Dlifecycle.resolutionScope=COMPILE",
+            CLEAN_GOAL,
+            PACKAGE_GOAL,
+            POST_ELIDE_PROBE_GOAL);
+    final Path skipTestsTrimmed = testViewTrimmedJar(consumer);
+    final String skipTestsHash = sha256(skipTestsTrimmed);
+    assertAll(
+        "skipTests still compiles tests and leaves the production package trimmed",
+        () -> assertThat(skipTests).contains(BUILD_SUCCESS),
+        () -> assertThat(skipTests).contains("Tests are skipped."),
+        () -> assertThat(consumer.resolve("target/test-classes/app/AppTest.class")).exists(),
+        () ->
+            assertThat(jarEntryNames(consumer.resolve("target/test-view-consumer-1.0.0.jar")))
+                .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
+
+    final String skipCompilation =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("skip-compilation.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dmaven.test.skip=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final Path skipCompilationTrimmed = testViewTrimmedJar(consumer);
+    assertAll(
+        "maven.test.skip leaves no compiled test classes or test addition",
+        () -> assertThat(skipCompilation).contains(BUILD_SUCCESS, "Tests are skipped."),
+        () -> assertThat(consumer.resolve("target/test-classes/app/AppTest.class")).doesNotExist(),
+        () -> assertThat(sha256(skipCompilationTrimmed)).isEqualTo(skipTestsHash),
+        () ->
+            assertThat(jarEntryNames(consumer.resolve("target/test-view-consumer-1.0.0.jar")))
+                .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
+
+    Files.delete(consumer.resolve("src/test/java/app/AppTest.java"));
+    final String noSources =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("no-test-sources.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    assertAll(
+        "no test sources leave the package on the production view",
+        () -> assertThat(noSources).contains(BUILD_SUCCESS, "testCompile"),
+        () -> assertThat(consumer.resolve("target/test-classes/app/AppTest.class")).doesNotExist(),
+        () ->
+            assertThat(jarEntryNames(consumer.resolve("target/test-view-consumer-1.0.0.jar")))
+                .doesNotContain("io/github/spockz/elider/fixture/testonly/Marker.class"));
+  }
+
+  @Test
+  void productionTestViewRejectsMissingElideAndUnprovenBanInputs() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("test-view-unsupported");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+
+    final String direct =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("direct-without-elide.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            CLEAN_GOAL,
+            "compiler:testCompile");
+    assertAll(
+        "direct test compilation cannot use a stale or absent Elide plan",
+        () -> assertThat(direct).contains("Test compilation view requires a successful Elide goal"),
+        () -> assertThat(direct).doesNotContain("BUILD SUCCESS"));
+
+    final Path pom = consumer.resolve("pom.xml");
+    Files.writeString(
+        pom,
+        Files.readString(pom)
+            .replace(
+                "<trimJars>true</trimJars>",
+                "<trimJars>true</trimJars><banishedDependencies>"
+                    + "org.example:unreachable"
+                    + "</banishedDependencies>"));
+    final String banned =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("ban-not-allowed.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            CLEAN_GOAL,
+            "test");
+    assertAll(
+        "the opt-in view refuses a ban policy until post-ban inputs are proven",
+        () ->
+            assertThat(banned)
+                .contains(
+                    "Test compilation view with elide.banishedDependencies is not yet supported"),
+        () -> assertThat(banned).doesNotContain("BUILD SUCCESS"));
+  }
+
+  @Test
   // WHY: One fixture contrasts extension-enabled and extension-disabled runs.
   @SuppressWarnings({"PMD.NcssCount", "PMD.CognitiveComplexity"})
   void packagedElideMojoPublishesTrimmedJarForLaterResolution() throws Exception {
@@ -2756,6 +3196,88 @@ final class DependencyContextLifecycleIT {
     }
   }
 
+  private static List<String> jarEntryNames(final Path jarPath) throws IOException {
+    try (JarFile jar = new JarFile(jarPath.toFile())) {
+      return jar.stream().map(JarEntry::getName).toList();
+    }
+  }
+
+  private static void writeTestAdditions(
+      final Path retainedOriginal,
+      final Path droppedOriginal,
+      final Path outputPath,
+      final boolean includeHelper)
+      throws IOException {
+    try (JarFile retained = new JarFile(retainedOriginal.toFile());
+        JarFile dropped = new JarFile(droppedOriginal.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(outputPath))) {
+      copyJarEntry(retained, output, "io/github/spockz/elider/fixture/testview/Builder.class");
+      if (includeHelper) {
+        copyJarEntry(retained, output, "io/github/spockz/elider/fixture/testview/Helper.class");
+      }
+      copyJarEntry(dropped, output, "io/github/spockz/elider/fixture/testonly/Marker.class");
+    }
+  }
+
+  private static void copyJarEntry(
+      final JarFile input, final JarOutputStream output, final String name) throws IOException {
+    final JarEntry source = input.getJarEntry(name);
+    if (source == null) {
+      throw new IOException("Original JAR lacks " + name);
+    }
+    output.putNextEntry(new JarEntry(name));
+    try (InputStream bytes = input.getInputStream(source)) {
+      bytes.transferTo(output);
+    }
+    output.closeEntry();
+  }
+
+  private static void writeTestViewExtensions(final Path descriptor)
+      throws IOException, XMLStreamException {
+    try (OutputStream output = Files.newOutputStream(descriptor)) {
+      final XMLStreamWriter xml =
+          XMLOutputFactory.newFactory().createXMLStreamWriter(output, "UTF-8");
+      try {
+        xml.writeStartDocument("UTF-8", "1.0");
+        xml.writeStartElement("extensions");
+        writeExtension(xml, "io.github.spockz", "dependency-elider-maven-plugin", "0.1.0-SNAPSHOT");
+        writeExtension(xml, GROUP_ID, "test-view-listener-extension", VERSION);
+        xml.writeEndElement();
+        xml.writeEndDocument();
+      } finally {
+        xml.close();
+      }
+    }
+  }
+
+  private static void configureTestViewConsumer(final Path consumer)
+      throws IOException, XMLStreamException {
+    Files.writeString(
+        consumer.resolve(TRACE_FILE), "io.github.spockz.elider.fixture.testview.Client\n");
+    writeTestViewExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML));
+  }
+
+  private static void writeUserClasspathJar(final Path path) throws IOException {
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path))) {
+      output.putNextEntry(new JarEntry("user-classpath-marker.txt"));
+      output.write("present".getBytes(StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
+  }
+
+  private static Path testViewTrimmedJar(final Path consumer) throws IOException {
+    try (Stream<Path> paths = Files.walk(consumer.resolve("target/elided-artifacts"))) {
+      return paths
+          .filter(
+              path ->
+                  "io.github.spockz.elider.test-test-view-library-1.0.0-trimmed.jar"
+                      .equals(path.getFileName().toString()))
+          .findFirst()
+          .orElseThrow(() -> new IOException("No retained test-view-library JAR"));
+    }
+  }
+
   private static void assertMojoOutputReports(
       final Path consumer,
       final String trimmedHash,
@@ -3316,7 +3838,8 @@ final class DependencyContextLifecycleIT {
     copyDirectoryTree(source, destination);
     final Path testSources = repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/java");
     for (final String module :
-        List.of("helper-plugin", "resolver-extension", "plan-seed-extension")) {
+        List.of(
+            "helper-plugin", "resolver-extension", "plan-seed-extension", "test-view-extension")) {
       final Path pom = destination.resolve(module).resolve(POM_XML);
       final String contents = Files.readString(pom);
       Files.writeString(
