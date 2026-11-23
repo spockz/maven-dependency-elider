@@ -151,6 +151,7 @@ public final class AnalyzeMojo extends AbstractElisionMojo {
                   : "  JAR trim cache: unavailable (trim stage not run)");
       getLog().info("  Analysis report: " + summary.toAbsolutePath().normalize());
       getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
+      getLog().info("  Test view: unavailable: tests were not compiled during analyze");
     }
   }
 

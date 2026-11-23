@@ -19,5 +19,7 @@
         <module>keep-library</module>
         <module>test-view-library</module>
         <module>test-only-library</module>
+        <module>test-view-bridge-library</module>
+        <module>test-view-processor-library</module>
     </modules>
 </project>

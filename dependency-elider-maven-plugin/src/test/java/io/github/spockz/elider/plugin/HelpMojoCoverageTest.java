@@ -31,10 +31,11 @@ final class HelpMojoCoverageTest {
                     help ->
                         assertThat(help)
                             .contains(
-                                "This plugin has 6 goals",
+                                "This plugin has 7 goals",
                                 "dependency-elider:analyze",
                                 "dependency-elider:elide",
                                 "dependency-elider:help",
+                                "dependency-elider:prepare-test-view",
                                 "dependency-elider:report",
                                 "dependency-elider:update-cve-index",
                                 "dependency-elider:validate",
@@ -60,7 +61,7 @@ final class HelpMojoCoverageTest {
 
     assertThat(help)
         .contains("dependency-elider:report")
-        .doesNotContain("dependency-elider:analyze", "This plugin has 5 goals");
+        .doesNotContain("dependency-elider:analyze", "This plugin has 6 goals");
     assertThat(output.warnings())
         .contains(
             "The parameter 'lineLength' should be positive, using '80' as default.",

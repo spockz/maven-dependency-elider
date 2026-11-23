@@ -21,6 +21,11 @@ import org.apache.maven.project.MavenProject;
 /** Schedules configured elision before eligible standalone tree requests. */
 @Named
 @Singleton
+@SuppressWarnings({
+  "PMD.AvoidInstantiatingObjectsInLoops",
+  "PMD.CognitiveComplexity",
+  "PMD.CyclomaticComplexity"
+})
 public final class EliderLifecycleParticipant extends AbstractMavenLifecycleParticipant {
   /** Number of goals required to assign an independent phase priority. */
   private static final int SINGLE_GOAL_COUNT = 1;
@@ -50,6 +55,7 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
     MavenOriginalInputAudit.markHookPresent(session);
     assignDefaultElidePhases(session);
+    scheduleTestViewPreparation(session);
     EliderTreePreparation.schedule(session);
     new BanishedDependencyLifecycleActivation(
             mavenPluginManager, pluginPrefixResolver, pluginVersionResolver)
@@ -83,6 +89,51 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
           plugins.add(plugin);
         }
       }
+    }
+  }
+
+  private static void scheduleTestViewPreparation(final MavenSession session)
+      throws MavenExecutionException {
+    if (session.getProjects() == null) {
+      return;
+    }
+    for (final MavenProject project : session.getProjects()) {
+      if (!EliderTestViewPlan.requested(session, project) || project.getBuild() == null) {
+        continue;
+      }
+      final Plugin plugin =
+          project
+              .getBuild()
+              .getPluginsAsMap()
+              .get("io.github.spockz:dependency-elider-maven-plugin");
+      if (plugin == null) {
+        continue;
+      }
+      final List<PluginExecution> elideExecutions =
+          plugin.getExecutions().stream().filter(e -> e.getGoals().contains("elide")).toList();
+      if (elideExecutions.isEmpty()) {
+        continue;
+      }
+      for (final PluginExecution execution : elideExecutions) {
+        if (!List.of("initialize", "process-classes").contains(execution.getPhase())) {
+          throw EliderPluginConfiguration.failure(
+              project,
+              "Test additions require dependency-elider:elide at initialize or process-classes");
+        }
+      }
+      if (plugin.getExecutions().stream()
+          .anyMatch(
+              e ->
+                  "dependency-elider-test-view".equals(e.getId())
+                      || e.getGoals().contains("prepare-test-view"))) {
+        throw EliderPluginConfiguration.failure(
+            project, "Test additions already have a prepare-test-view execution");
+      }
+      final PluginExecution preparation = new PluginExecution();
+      preparation.setId("dependency-elider-test-view");
+      preparation.setPhase("process-test-classes");
+      preparation.addGoal("prepare-test-view");
+      plugin.addExecution(preparation);
     }
   }
 

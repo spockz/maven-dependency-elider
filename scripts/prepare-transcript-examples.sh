@@ -17,7 +17,7 @@ main() {
     fi
   fi
   if [[ -z ${JAVA_HOME:-} ]]; then
-    echo "JAVA_HOME must point to a supported JDK; transcripts currently target Java 21" >&2
+    echo "JAVA_HOME must point to a supported JDK 21 or newer" >&2
     exit 2
   fi
   java_home=$JAVA_HOME
@@ -68,6 +68,12 @@ main() {
   "$maven" "${maven_options[@]}" -f \
     "$repo_root/examples/logback-vulnerability-mapping-catalog/pom.xml" install -Dmaven.test.skip=true
 
+  test_view_libraries="$repo_root/examples/example-test-view-app/libraries"
+  "$maven" "${maven_options[@]}" -f "$test_view_libraries/test-only-library/pom.xml" \
+    install -Dmaven.test.skip=true
+  "$maven" "${maven_options[@]}" -f "$test_view_libraries/test-view-library/pom.xml" \
+    install -Dmaven.test.skip=true
+
   bash "$repo_root/scripts/prepare-example-vulnerability-cache.sh" \
     "$cache_dir" "$maven" "${maven_options[@]}"
 
@@ -82,6 +88,7 @@ main() {
     example-spring-boot-app
     example-cve-unused-app
     example-cve-safe-class-app
+    example-test-view-app
   )
 
   wait_for_spring_endpoint() {
@@ -171,8 +178,10 @@ main() {
       "-Delide.traceFiles=$trace"
       -Delide.trimJars=true
       -Dmaven.compiler.proc=none
-      -DskipTests=true
     )
+    if [[ $fixture != example-test-view-app ]]; then
+      elision_options+=(-DskipTests=true)
+    fi
     case "$fixture" in
       example-basic-app)
         elision_options+=(
@@ -190,6 +199,9 @@ main() {
         elision_options+=(
           -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-core:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar:
         )
+        ;;
+      example-test-view-app)
+        elision_options+=(-Delide.testCompilationView=true)
         ;;
       *)
         echo "Unsupported transcript fixture: $fixture" >&2

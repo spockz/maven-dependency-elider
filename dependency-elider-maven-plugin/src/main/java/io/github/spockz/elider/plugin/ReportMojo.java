@@ -4,6 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
@@ -24,6 +26,12 @@ public final class ReportMojo extends AbstractMojo {
       defaultValue = "${project.build.directory}/dependency-elider-report.json")
   private File summaryFile;
 
+  /** Path to the separate, test-scoped observation. */
+  @Parameter(
+      property = "elide.testViewReportFile",
+      defaultValue = "${project.build.directory}/elider/test-view-report.json")
+  private File testViewReportFile;
+
   /** Creates the goal for Maven plugin discovery. */
   public ReportMojo() {
     super();
@@ -35,6 +43,7 @@ public final class ReportMojo extends AbstractMojo {
     final MavenElisionReportSnapshot snapshot = readSnapshot();
     validateProject(snapshot);
     renderSnapshot(snapshot);
+    renderTestView(snapshot);
   }
 
   private MavenElisionReportSnapshot readSnapshot() throws MojoFailureException {
@@ -93,5 +102,49 @@ public final class ReportMojo extends AbstractMojo {
                   + summaryFile.toPath().toAbsolutePath().normalize());
       rendered.forEach(getLog()::info);
     }
+  }
+
+  private void renderTestView(final MavenElisionReportSnapshot production)
+      throws MojoFailureException {
+    if (!getLog().isInfoEnabled()) {
+      return;
+    }
+    if (production.mode() == MavenElisionReportSnapshot.Mode.ANALYSIS) {
+      getLog().info("Test view: unavailable: tests were not compiled during analyze");
+      return;
+    }
+    if (testViewReportFile == null || !Files.isRegularFile(testViewReportFile.toPath())) {
+      getLog().info("Test view: unavailable: no saved test preparation");
+      return;
+    }
+    final Path path = testViewReportFile.toPath();
+    final TestViewReportSnapshot testView;
+    try {
+      testView = TestViewReportWriter.read(path);
+      final String base = MavenElisionReportSnapshot.canonicalProjectDirectory(project).toString();
+      if (!matchesProduction(testView, production, base)) {
+        getLog()
+            .info(
+                "Test view: unavailable: saved test preparation does not match production report");
+        return;
+      }
+    } catch (final IOException | IllegalArgumentException failure) {
+      throw new MojoFailureException(
+          "Could not display test-view report: " + failure.getMessage(), failure);
+    }
+    getLog().info("Test-view report JSON snapshot: " + path.toAbsolutePath().normalize());
+    TestViewReportRenderer.render(testView).forEach(getLog()::info);
+  }
+
+  private boolean matchesProduction(
+      final TestViewReportSnapshot testView,
+      final MavenElisionReportSnapshot production,
+      final String base)
+      throws IOException {
+    return testView.projectGav().equals(production.projectGav())
+        && testView.projectBaseDirectory().equals(base)
+        && testView
+            .productionReportSha256()
+            .equals(TestViewReportWriter.sha256(summaryFile.toPath()));
   }
 }

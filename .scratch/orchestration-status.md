@@ -1448,3 +1448,23 @@ Slices 0–6 are implemented on `track/wholesale`. The independent final reviewe
 | No-trim publication and analyze/report parity | Slice 4 | Unchanged original JARs; SBOM/OpenVEX output; write-failure propagation; ownership-aware stale cleanup; report replay | VERIFIED ON TRACK: `MavenOutputPublicationTest`, `AnalyzeMojoProductionOutputTest`, `MavenElisionReportGenericFindingTest`, publication ownership and transcript/example assertions; final `make check` passes |
 | Lifecycle and source-free modules | Slice 5 | `process-classes` default/order; explicit binding preservation; absent/empty outputs; package and test-compile boundaries | VERIFIED ON TRACK: `EliderPluginConfigurationTest` (including the reviewer-requested explicit-`verify` regression), `MavenPreconditionGenerationGuardTest`, `DependencyContextLifecycleIT`; final `make check` passes |
 | Real snapshots, docs and final integration | Slice 6 | Spring/safe-class fixtures; ADR/RQ updates; generated transcripts; JDK 21/25 examples; `make check` | COMPLETE AND INTEGRATED: implementation and follow-up fast-forwarded into local `main` as `3b7fa1f`; post-merge `make check` passed with transcript and cross-JDK catalog digest checks; RQ-0020/RQ-0021, ADR/README/site and contributor docs updated |
+<!-- WHY: Tracks ADR-0016 requirement evidence across implementation slices. -->
+# ADR-0016 completion status
+
+Base: `26bade3` (first real-Elider lifecycle proof, `make check` passed before commit).
+
+The prior slice arrived as uncommitted changes in this checkout. It was committed intact before new ADR work; no worktree branch was made from a dirty baseline. The current work uses this shared checkout because the follow-up slices depend on the same lifecycle and fixture files.
+
+| Requirement | Status | Verified boundary and remaining limit |
+| :--- | :--- | :--- |
+| S0 Real Maven compiler/runtime/production resolver and Shade handoff | Verified | Packaged plugin and extension, class origins, distinct live resolver request and production-only Shade package. |
+| S1 Post-ban, mediated allowed original inventory | Verified | Allowed originals preserve mediation and scope; forced-absent ban tests pass; ambiguous identity fails closed. |
+| S2 Automatic preparation after test compilation | Verified | Real Maven compiler provenance, generated test class and clean/no-clean checks pass. |
+| S3 Test reachability and provider-correct deterministic additions | Verified within class-only boundary | Cross-JAR method-body closure and dynamic fallback pass. Unchanged resources stay in the trimmed production JAR; the addition contains only missing classes. Changed or missing resources and unsafe archive splits fail preparation. |
+| S4 Lifecycle and runner boundaries | Verified within Maven 3.9.11/Surefire 3.5.2 boundary | Two Surefire executions, skips, failures, direct goals and one sequential reactor leaf pass; parallel, JPMS, other runners and interruption remain unsupported or unverified. |
+| S5 Freshness, report and replay | Verified | Strict independent schema-1 records, stale-input refusal and unavailable replay pass. |
+| S6 Policy and production isolation | Verified | Three clean-build package/SBOM/VEX/forbidden comparisons, precondition guard and packaged-app smoke pass. |
+| S7 User documentation and examples | Verified | README, usage, FAQ, seven-fixture example harness and generated transcript pass. |
+| S8 Final verification | Verified | `make check-fast`, `make test-examples`, `make update-transcripts`, `make check` and focused JDK 25 real-Maven test pass. |
+
+Do not mark a row done solely because a unit test passes. Record the concrete process, paths, and observed artifacts in ADR-0016 and RQ-0017.

@@ -41,6 +41,30 @@ func TestNormalizeOutputDoesNotPinTheEliderRuntimeRelease(t *testing.T) {
 	}
 }
 
+func TestNormalizeOutputKeepsCompilerTargetButOmitsJDKSpecificRuntimeNoise(t *testing.T) {
+	output := strings.Join([]string{
+		"WARNING: A terminally deprecated method in sun.misc.Unsafe has been called",
+		"WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/maven/lib/guice.jar)",
+		"WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner",
+		"WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release",
+		"[INFO] Analysis target JDK release: 21",
+		"[INFO] Elider runtime JDK release: 25",
+		"[INFO] Analyzed runtime releases: [25]",
+		"[INFO] WARNING: Compiler target Java 21 is not covered by supplied runtime releases [25] (analysis covers [25]).",
+		"[INFO] WARNING: Policy evidence remains visible",
+	}, "\n")
+	got := normalizeOutput(output, "/repo", "/repo/.scratch/evidence")
+	want := []string{
+		"[INFO] Analysis target JDK release: 21",
+		"[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>",
+		"[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]",
+		"[INFO] WARNING: Policy evidence remains visible",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized JDK-specific transcript = %#v, want %#v", got, want)
+	}
+}
+
 func TestNormalizeForbiddenCodeTranscriptKeepsPolicyFactsWithoutRuntimeIdentity(t *testing.T) {
 	output := "[INFO] Analysis target JDK release: 25\n" +
 		"[INFO] Elider runtime JDK release: 25\n" +

@@ -58,7 +58,10 @@ type commandResult struct {
 var (
 	snapshotAt                = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: (?:analysis prediction|last successful elide run) at )[^\s]+`)
 	runtimeRelease            = regexp.MustCompile(`(?m)^(\[INFO\] Elider runtime JDK release: )\d+$`)
+	analyzedRuntimeRelease    = regexp.MustCompile(`^(\[INFO\] Analyzed runtime releases: \[)\d+(\])$`)
 	runtimeImageCaption       = regexp.MustCompile(`^\[INFO\] Runtime input .+: Java .+$`)
+	compilerCoverageWarning   = regexp.MustCompile(`^\[INFO\] WARNING: Compiler target Java \d+ is not covered by supplied runtime releases \[\d+\] \(analysis covers \[\d+\]\)\.$`)
+	mavenGuiceUnsafeCall      = regexp.MustCompile(`^WARNING: sun\.misc\.Unsafe::staticFieldBase has been called by com\.google\.inject\.internal\.aop\.HiddenClassDefiner \(file:.+\)$`)
 	targetRelease             = regexp.MustCompile(`(?m)^\[INFO\] Analysis target JDK release: (\d+)$`)
 	forbiddenRuntimeIdentity  = regexp.MustCompile(`( in JAVA_RUNTIME ).*?( \((?:Available runtime evidence|Exact invocation found))`)
 	forbiddenRuntimeVersion   = regexp.MustCompile(`(, version=)[^,]+(, targetRelease=)`)
@@ -642,10 +645,14 @@ func normalizeOutput(output, root, evidencePath string) []string {
 	}
 	result := make([]string, 0, len(lines))
 	for _, line := range lines {
+		if environmentOnlyWarning(line) {
+			continue
+		}
 		line = strings.ReplaceAll(line, evidencePath, "<TEMP_DIR>")
 		line = strings.ReplaceAll(line, root, "<PROJECT_ROOT>")
 		line = snapshotAt.ReplaceAllString(line, "${1}<TIMESTAMP>")
 		line = runtimeRelease.ReplaceAllString(line, "${1}<RUNTIME_RELEASE>")
+		line = analyzedRuntimeRelease.ReplaceAllString(line, "${1}<RUNTIME_RELEASE>${2}")
 		line = runtimeImageCaption.ReplaceAllString(line, "[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)")
 		line = forbiddenRuntimeIdentity.ReplaceAllString(line, "${1}<RUNTIME_IDENTITY>${2}")
 		if strings.Contains(line, "evidence=RUNTIME_REACHABILITY") || strings.Contains(line, "evidence=DIRECT_RUNTIME_CALL") {
@@ -667,6 +674,13 @@ func normalizeOutput(output, root, evidencePath string) []string {
 		result = append(result, line)
 	}
 	return result
+}
+
+func environmentOnlyWarning(line string) bool {
+	return compilerCoverageWarning.MatchString(line) || mavenGuiceUnsafeCall.MatchString(line) ||
+		line == "WARNING: A terminally deprecated method in sun.misc.Unsafe has been called" ||
+		line == "WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner" ||
+		line == "WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release"
 }
 
 func elideGraphRows(lines []string, limit int) []string {

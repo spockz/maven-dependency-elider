@@ -17,11 +17,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +48,7 @@ public final class ExampleSupport {
               + "verify-cve-report, verify-spring-analysis, "
               + "verify-cve-unused-expected-drop, "
               + "verify-no-whole-artifact-drops, verify-basic-graph-drop, "
+              + "verify-test-view-report, "
               + "verify-spring-expected-drop, "
               + "verify-spring-snakeyaml-retained, "
               + "or verify-reactor-reports");
@@ -59,6 +63,7 @@ public final class ExampleSupport {
       case "verify-cve-unused-expected-drop" -> verifyCveUnusedExpectedDrop(arguments);
       case "verify-no-whole-artifact-drops" -> verifyNoWholeArtifactDrops(arguments);
       case "verify-basic-graph-drop" -> verifyBasicGraphDrop(arguments);
+      case "verify-test-view-report" -> verifyTestViewReport(arguments);
       case "verify-spring-expected-drop" -> verifySpringExpectedDrop(arguments);
       case "verify-spring-snakeyaml-retained" -> verifySpringSnakeyamlRetained(arguments);
       case "verify-reactor-reports" -> verifyReactorReports(arguments);
@@ -1231,6 +1236,69 @@ public final class ExampleSupport {
               + (arguments.length - 2)
               + " drops, found "
               + actualCoordinates);
+    }
+  }
+
+  private static void verifyTestViewReport(final String[] arguments) throws IOException {
+    if (arguments.length != 3) {
+      throw new IllegalArgumentException("Usage: verify-test-view-report PRODUCTION_JSON TEST_JSON");
+    }
+    final Path productionPath = requireAbsolutePath(arguments[1], "PRODUCTION_JSON");
+    final Path testPath = requireAbsolutePath(arguments[2], "TEST_JSON");
+    final byte[] productionBytes = Files.readAllBytes(productionPath);
+    final JsonNode production = JSON.readTree(productionBytes);
+    final JsonNode testView = JSON.readTree(testPath.toFile());
+    final String digest;
+    try {
+      digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(productionBytes));
+    } catch (final NoSuchAlgorithmException exception) {
+      throw new IOException("SHA-256 unavailable for test-view example", exception);
+    }
+    if (testView.path("schemaVersion").asInt(-1) != 1
+        || !"PREPARED".equals(testView.path("status").asText())
+        || !digest.equals(testView.path("productionReportSha256").asText())
+        || !"io.github.spockz:example-test-view-app:0.1.0-SNAPSHOT"
+            .equals(production.path("projectGroupId").asText()
+                + ":" + production.path("projectArtifactId").asText()
+                + ":" + production.path("projectVersion").asText())
+        || !production.path("projectBaseDirectory").asText()
+            .equals(testView.path("projectBaseDirectory").asText())
+        || !testView.path("conservativeFallbackUsed").asBoolean(false)) {
+      throw new IOException("Test-view report does not bind the prepared fallback to production");
+    }
+    final Set<String> expected =
+        Set.of(
+            "io/github/spockz/example/testview/library/Builder",
+            "io/github/spockz/example/testview/library/Helper",
+            "io/github/spockz/example/testview/library/Unused",
+            "io/github/spockz/example/testview/marker/Marker");
+    final Set<String> observed = new HashSet<>();
+    for (final JsonNode addition : testView.path("additions")) {
+      for (final JsonNode name : addition.path("classes")) {
+        observed.add(name.asText());
+      }
+    }
+    if (!observed.equals(expected)) {
+      throw new IOException("Test-view report added classes differ from the example graph: " + observed);
+    }
+    boolean trimmedInput = false;
+    boolean droppedInput = false;
+    for (final JsonNode input : testView.path("inputArtifacts")) {
+      final String identity = input.path("identity").asText();
+      if (identity.contains("artifactId=test-view-library")) {
+        trimmedInput = input.path("effectiveJar").asText().endsWith("-trimmed.jar");
+      } else if (identity.contains("artifactId=test-only-library")) {
+        droppedInput = input.path("effectiveJar").isNull();
+      }
+    }
+    if (!trimmedInput || !droppedInput || !testView.path("additionsJar").asText()
+        .endsWith("/elider/test-additions.jar")) {
+      throw new IOException("Test-view report did not record both changed dependency providers");
+    }
+    final JsonNode drops = production.path("droppedArtifacts");
+    if (drops.size() != 1 || !drops.get(0).path("coordinate").asText()
+        .contains(":test-only-library:")) {
+      throw new IOException("Production report did not drop the test-only artifact");
     }
   }
 

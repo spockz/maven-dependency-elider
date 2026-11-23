@@ -1,0 +1,2 @@
+# WHY: Lets the ordinary Maven Compiler discover the fixture processor by service loading.
+io.github.spockz.elider.fixture.testview.GenerateTestCaseProcessor

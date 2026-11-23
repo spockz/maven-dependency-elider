@@ -74,6 +74,18 @@ public final class ReportMojoTestSupport {
     return mojo;
   }
 
+  /** Creates a report goal with an independent saved test-view report path. */
+  public static ReportMojo mojo(
+      final Path snapshot,
+      final Path testViewReport,
+      final MavenProject project,
+      final List<String> messages)
+      throws ReflectiveOperationException {
+    final ReportMojo mojo = mojo(snapshot, project, messages);
+    set(mojo, "testViewReportFile", testViewReport.toFile());
+    return mojo;
+  }
+
   private static ArtifactCoordinate coordinate(final String artifactId) {
     return EffectiveGraphPolicyTestSupport.coordinate(
         artifactId, EffectiveGraphPolicyTestSupport.COMPILE_SCOPE);

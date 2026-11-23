@@ -1,0 +1,2 @@
+# WHY: Verifies tests read preserved dependency resources from the trimmed production JAR.
+production-resource

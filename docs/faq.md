@@ -31,6 +31,35 @@ Whole-artifact removal requires the core extension (`.mvn/extensions.xml`) and a
 
 It forecasts whole-artifact drops and on-disk JAR byte savings in a read-only pass. By default, `elide.trimJars=false`. Enable `elide.trimJars=true` to preview intra-JAR class pruning. The full list is in `target/dependency-elider-analysis-report.json`.
 
+### How can tests compile against classes removed from production dependencies?
+
+For the tested Maven 3.9.11 classpath setup with exactly one opted-in project, enable the core extension and run
+`mvn clean test -Delide.testCompilationView=true` with `elide` bound before `testCompile`.
+Elider temporarily exposes the original allowed dependencies to the test compiler, restores the
+production view afterward, and prepares missing classes for Surefire in
+`target/elider/test-additions.jar`. The addition is test-only; it does not enter the production
+package, resolver plan, SBOM or VEX. See [isolated test view usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md#isolated-test-compilation-and-runtime-view).
+
+### Why does test-view preparation ask me to run `mvn clean test`?
+
+The saved test-view freshness manifest binds test sources and output, production output,
+dependency JAR contents, compiler execution settings and runtime options. If any checked input
+changes in a build without `clean`, Elider refuses to reuse the previous test observation or
+addition. `-DskipTests` still compiles and prepares tests; `-Dmaven.test.skip=true` skips
+compilation and leaves test results unavailable. A needed class from a signed, sealed,
+multi-release or modular JAR may require a view that the automatic class-only addition cannot
+supply, so preparation fails explicitly. Resources already preserved in the trimmed production
+JAR remain available to tests; changed or missing dependency resources fail preparation.
+
+### What does `report` say about test-only additions?
+
+The test-view report is separate from the production snapshot at
+`target/elider/test-view-report.json`. `report` replays its saved original-versus-effective inputs
+and added classes only when its project and production-report digest match. An analysis report,
+missing test report, changed production report, failed preparation or caller-supplied additions JAR is labeled
+unavailable or unverified. A test addition is not production code-absence proof or vulnerability
+mitigation.
+
 ### How can I keep a dependency JAR unchanged?
 
 Set `elide.trimSkipArtifacts` to `groupId:artifactId[:version[:type[:classifier]]]`; omitted `version` or `classifier` parts (or `*`) act as wildcards. The JAR stays byte-identical and cannot be dropped, though its live classes still retain linked classes in trim candidates. See [Maven plugin usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md).

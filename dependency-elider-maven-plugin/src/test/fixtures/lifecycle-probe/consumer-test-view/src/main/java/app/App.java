@@ -7,4 +7,8 @@ public final class App {
   public String run() {
     return new Client().value();
   }
+
+  public static void main(final String[] args) {
+    System.out.println(new App().run());
+  }
 }

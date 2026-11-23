@@ -86,6 +86,31 @@
       "maxGraphRows": 3
     },
     {
+      "id": "report-test-view-app",
+      "targetDocument": "README.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "-f",
+        "examples/example-test-view-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report"
+      ],
+      "goal": "report",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "Test view: prepared",
+        "Test-only added classes: 4 in 2 artifacts",
+        "Conservative test-only fallback: true",
+        "Builder",
+        "Helper",
+        "Unused",
+        "Marker"
+      ],
+      "maxGraphRows": 3
+    },
+    {
       "id": "report-spring-boot-app",
       "targetDocument": "README.md",
       "workingDirectory": ".",

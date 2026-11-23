@@ -1,11 +1,12 @@
 <!-- WHY: Documents the usable Maven goal and the lifecycle safety boundary for plugin consumers. -->
 # Maven Plugin Usage
 
-Maven Dependency Elider provides four primary goals:
+Maven Dependency Elider provides these goals:
 
 * `analyze`: Dry-run that identifies removable dependencies and estimates size savings without changing dependency artifacts, classpaths, or packages. It may write the configured class-usage report.
 * `elide`: Active build-time goal that prunes unneeded JARs and trims unreferenced classes during the `process-classes` phase.
 * `report`: Displays the persisted elision snapshot and mediated dependency graph from the last successful build.
+* `prepare-test-view`: Prepares test-only runtime additions from compiled tests when the isolated test view is enabled. The core extension schedules it at `process-test-classes`.
 * `update-cve-index`: Refreshes local vulnerability intelligence from OSV and CVEList v5.
 
 For common questions, see the [User FAQ](faq.html) and [Contributor Decisions and FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md).
@@ -95,7 +96,7 @@ Process exit status: 0
 [INFO] Snapshot: analysis prediction at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
-[INFO] Analyzed runtime releases: [21]
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
 [INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
@@ -899,6 +900,7 @@ Process exit status: 0
 [INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
 [INFO]   Analysis report: <PROJECT_ROOT>/examples/example-cve-unused-app/target/dependency-elider-analysis-report.json
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
+[INFO]   Test view: unavailable: tests were not compiled during analyze
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -1012,6 +1014,9 @@ If the requested lifecycle reaches `test`, the guard requires the standard Maven
 | `elide.failOnUnsupportedModuleInfo` | `false` | When `false`, JARs with root `module-info.class` pass through unchanged on the classpath. When `true`, they fail the build. |
 | `elide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader dynamic roots declared in `META-INF/services/`. When `false`, unproven SPI roots are pruned. |
 | `elide.summaryFile` | `target/dependency-elider-report.json` | Path for the persisted elision snapshot read by `report`. |
+| `elide.testCompilationView` | `false` | Opts into the scoped original test compilation view and automatic test-only preparation. Requires the core extension, exactly one opted-in project, and a successful `elide` execution earlier in the same invocation. One opted-in leaf in a sequential reactor has been tested; parallel Maven reactor execution (`-T`) is unsupported. |
+| `elide.testAdditionsJar` | *(none)* | Optional caller-supplied test runtime JAR. When set, it bypasses automatic analysis and the test report labels its contents unverified. |
+| `elide.testViewReportFile` | `target/elider/test-view-report.json` | Separate saved test-view observation used by `report`; it does not change the production report, SBOM or VEX. |
 | `elide.analysisSummaryFile` | `target/dependency-elider-analysis-report.json` | Path for the analysis summary. To replay it, pass this path as `elide.summaryFile` to `report`. |
 | `elide.sbomFile` | `target/dependency-elider-sbom.cdx.json` | Path for the post-elision CycloneDX 1.6 SBOM. |
 | `elide.baselineSbomFile` | `target/baseline-sbom.cdx.json` | Path for the pre-elision baseline CycloneDX 1.6 SBOM. |
@@ -1056,11 +1061,72 @@ With `.mvn/extensions.xml` and an active elider execution at its selected phase 
 mvn dependency:tree
 ```
 
+### Isolated Test Compilation and Runtime View
+
+In the tested Maven 3.9.11 classpath setup with one opted-in project, run
+`mvn clean package -Delide.testCompilationView=true` with the core extension and an `elide` execution bound to
+`process-classes` or `initialize`. The extension schedules `prepare-test-view` at
+`process-test-classes`. The test compiler sees the original allowed mediated dependency files only
+during its `testCompile` execution. Elider restores the effective production artifact view after
+compilation, including on a handled compilation failure. The production resolver plan is not
+switched to originals.
+
+Preparation scans the compiled test roots, closes their static links across the allowed original
+JARs, and adds missing classes to `target/elider/test-additions.jar`. Surefire receives that JAR
+after the ordinary test classpath. Existing Surefire XML classpath elements and the
+`maven.test.additionalClasspath` property are retained. A test may therefore pass using code that
+is absent from the deployable package; check the packaged application with a separate production
+classpath test when deployment behavior matters. Elider does not attach, install or deploy the
+test addition.
+
+Use `mvn clean` when test sources, compiled output, dependencies, compiler settings or runtime
+options change. A build without `clean` requires a matching
+`target/elider/test-view-freshness.json` manifest; changed inputs fail with a diagnostic to run
+`mvn clean test`. Preparation clears the previous saved test report before checking freshness, so
+failed preparation cannot leave a replayable result from the prior run. `-DskipTests` still compiles and prepares tests, while
+`-Dmaven.test.skip=true` leaves test results unavailable. Direct goals need Elider earlier in the
+same invocation, and automatic runtime delivery needs preparation after the last successful test
+compiler execution. An explicit direct sequence can use
+`compiler:testCompile dependency-elider:prepare-test-view surefire:test` after `process-classes` has run.
+
+The current test addition is a class-only JAR. Tests continue to read resources from the
+effective production JARs. A changed-path contributor whose resource entries or bytes differ
+from the allowed original, or a selected signed, sealed, multi-release or modular archive or one
+with classpath-relevant manifest fields, fails with an actionable error. Duplicate original class
+owners, missing providers and unsupported module-path behavior also fail. The tested plugin
+combination is Compiler 3.13.0, Surefire 3.5.2
+and Shade 3.6.0. A single opted-in leaf in a sequential reactor is tested; multiple opted-in modules,
+parallel Maven reactor execution (`-T`) and more complex reactor topologies remain outside the
+verified boundary. An ordinary test annotation processor that generates a JUnit test has passed
+the real Maven fixture. Maven 4, arbitrary runners, other annotation processor configurations,
+unchecked callback failures and process interruption remain outside the verified boundary.
+Allowed test inputs respect explicit bans; excluded or banned artifacts are not restored.
+Production forbidden-code assessment, SBOM, OpenVEX and precondition-proof eligibility retain
+their production scope. Running tests does not waive the precondition guard's `skipTests=true`
+requirement when execution reaches Surefire.
+
+Compiled tests and reached original classes are scanned for direct `Class.forName`,
+`ClassLoader.loadClass`, `ServiceLoader.load` and `loadInstalled` calls. Literal class names become
+test roots. If a call cannot be resolved, preparation conservatively includes every class missing
+from the effective view in the test-only addition and reports `conservativeFallbackUsed=true`.
+This can include classes not used by the test; it does not add them to the production package.
+Custom loaders, method handles, resource-driven class names and dynamic classes outside the
+scanned closure are not modeled.
+
 ---
 
 ## 5. Viewing Elision Reports (`report`)
 
 The `report` goal displays the summary and mediated dependency graph from the last successful `elide` run without re-executing dependency analysis:
+
+It also reads the separate `target/elider/test-view-report.json` when present. Its schema-1
+payload records sorted original-versus-effective inputs, added classes, whether a conservative
+fallback was used, and the SHA-256 of the production report it belongs to. Replay verifies the
+project identity and production report binding without rescanning test or dependency files.
+Analysis reports, absent test reports and reports from another production run display an explicit
+unavailable test-view line. Malformed or incompatible test reports fail instead of being treated
+as empty results. A caller-supplied additions JAR is labeled unverified. Test-only rows never
+enter production omission proofs, SBOMs or VEX.
 
 `exclusionReview` saves repeated exact exclusions observed on frozen pre-injection effective
 dependency rows, including separate declaration and exclusion origins. Findings are advisory and
@@ -1398,6 +1464,7 @@ Process exit status: 0
 [INFO]   Exclusion review unavailable: No pre-injection declaration capture is
 [INFO]   available
 [INFO] Mediated dependency graph unavailable: Maven resolver session is unavailable
+[INFO] Test view: unavailable: no saved test preparation
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -1484,6 +1551,7 @@ Process exit status: 0
 [INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
 [INFO]   Analysis report: <TEMP_DIR>/forbidden-code/safe/transcript-analysis.json
 [INFO]   Class usage report: <TEMP_DIR>/forbidden-code/safe/transcript-classes.json
+[INFO]   Test view: unavailable: tests were not compiled during analyze
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -1561,6 +1629,7 @@ Process exit status: 0
 [INFO]   Exclusion review unavailable: No pre-injection declaration capture is
 [INFO]   available
 [INFO] Mediated dependency graph unavailable: Maven resolver session is unavailable
+[INFO] Test view: unavailable: no saved test preparation
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>

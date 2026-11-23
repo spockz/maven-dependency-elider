@@ -174,6 +174,112 @@ With this configuration:
 * Diagnostic commands (`./mvnw dependency:tree`) reflect the post-elision dependency graph.
 * When telemetry files are absent, elision passes through safely without modifying dependencies.
 
+### Isolated test compilation and runtime view
+
+For a Maven 3.9.11 classpath build using the core extension, opt in for one project with
+`-Delide.testCompilationView=true` on `./mvnw clean package`. Elider temporarily exposes the
+original allowed Maven dependencies while the test compiler runs, then restores the production
+view. After compilation, `dependency-elider:prepare-test-view` derives test-only classes from the
+compiled tests and allowed original JARs. Surefire runs with the effective production dependencies
+plus `target/elider/test-additions.jar` when additions are needed. The production resolver view and
+packaged artifacts do not receive the additions. This path is tested with Compiler 3.13.0,
+Surefire 3.5.2 and Shade 3.6.0, including one opted-in leaf in a sequential reactor.
+Resources preserved in a trimmed production JAR remain available to tests from that JAR;
+the test-only addition contains classes only. A changed or missing dependency resource view
+fails preparation rather than changing the production artifact.
+Parallel Maven reactor execution (`-T`) is outside this test-view boundary. See [plugin usage](dependency-elider-maven-plugin/src/site/markdown/usage.md#isolated-test-compilation-and-runtime-view)
+for activation, direct goals, skipped tests and unsupported inputs.
+
+Preparation saves `target/elider/test-view-report.json` separately from the production report.
+`dependency-elider:report` replays its saved test-only additions when they match the current
+production snapshot; otherwise it labels the test result unavailable. A failed preparation clears
+the previous saved test observation. The `analyze` goal cannot
+derive a test graph before test compilation. A test addition is not production omission proof or
+a vulnerability mitigation.
+
+The reproducible `example-test-view-app` installs two local dependency JARs, runs an ordinary
+baseline build, then trims the production view while its test still builds through `Builder` and
+`Helper` into a wholly dropped `Marker` artifact. An unresolved reflective call in a reached
+test library also causes `Unused` to be included conservatively in the test-only addition. The
+shaded production package retains only `Client` from these libraries. The saved report shows four
+added classes in two artifacts and labels the fallback:
+
+<!-- BEGIN:transcript:report-test-view-app -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  -f \
+  examples/example-test-view-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
+Process exit status: 0
+[INFO]
+[INFO] ---------------< io.github.spockz:example-test-view-app >---------------
+[INFO] Building Example: Isolated Test View 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-test-view-app ---
+[INFO] Dependency Elider report JSON snapshot: <PROJECT_ROOT>/examples/example-test-view-app/target/dependency-elider-report.json
+[INFO] Dependency Elider report
+[INFO] Project: io.github.spockz:example-test-view-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Analysis target JDK release: 21
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
+[INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
+[INFO] Policy: retained=[], banished=[]
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
+[INFO] Conventional Java source layout assumption saved for this run: true
+[INFO] Whole artifacts dropped: 1 / 10 (original JAR file bytes: 2.85 KiB)
+[INFO] Program classes removed with dropped JARs: 1 (uncompressed .class entry payload bytes: 409 B; excludes module descriptors and archive sanitation metadata)
+[INFO]   - io.github.spockz.example.testview:test-only-library:jar:1.0.0 (compile): 2.85 KiB original JAR, 1 class entries, 409 B
+[INFO] Raw trace decision drops before graph safety: 1
+[INFO] Applied bans: none
+[INFO] Program classes pruned from retained JARs: 3 (uncompressed omitted .class payload bytes: 2.21 KiB; excludes module descriptors and archive metadata)
+[INFO]   - io.github.spockz.example.testview:test-view-library:jar:1.0.0 (compile): 3 classes, 2.21 KiB
+[INFO] Vulnerability findings: none
+[INFO] CVE Freshness: INCOMPLETE (partial or mixed source freshness; some sources failed or are incomplete)
+[INFO] CVE Sources:
+[INFO]   - CVE_LIST PARTIAL
+[INFO]     Skipped 79 CVE List source row(s)
+[INFO]     Source diagnostics are in the JSON snapshot
+[INFO]   - OSV CURRENT
+[INFO] POM exclusion review (advisory only):
+[INFO]   Repeated POM exclusions:
+[INFO]     none found across effective dependency paths
+[INFO]   Exclusion provenance incomplete for 14 dependency or exclusion origins. Maven
+[INFO]   supplied no source location/identity or the location matched zero or multiple
+[INFO]   original POM rows. This advisory review does not affect elision.
+[INFO]   Full evidence is in the JSON snapshot fields
+[INFO]   exclusionReview.snapshot.dependencies and
+[INFO]   exclusionReview.snapshot.diagnostics.
+[INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
+[INFO]   - io.github.spockz:example-test-view-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
+[INFO]   - io.github.spockz:example-test-view-app:0.1.0-SNAPSHOT -> io.github.spockz.example.testview:test-view-library:jar:1.0.0 (compile) {nodeId=n1} [RETAINED, CLASS_TRIMMED]
+[INFO]   - io.github.spockz:example-test-view-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) {nodeId=n2} [RETAINED]
+[INFO]   ... 8 dependency graph rows elided (sha256:30259b42901d50f096dbc601ad16d706c2782286a70ad05f5d5579e359e21bc5)
+[INFO] Test-view report JSON snapshot: <PROJECT_ROOT>/examples/example-test-view-app/target/elider/test-view-report.json
+[INFO] Test view: prepared
+[INFO] Test compilation output: <PROJECT_ROOT>/examples/example-test-view-app/target/test-classes
+[INFO] Original mediated test inputs: 10
+[INFO]   - Identity[groupId=io.github.spockz.example.testview, artifactId=test-only-library, version=1.0.0, type=jar, classifier=, scope=compile]: <TEMP_DIR>/maven-repository/io/github/spockz/example/testview/test-only-library/1.0.0/test-only-library-1.0.0.jar -> absent from effective view
+[INFO]   - Identity[groupId=io.github.spockz.example.testview, artifactId=test-view-library, version=1.0.0, type=jar, classifier=, scope=compile]: <TEMP_DIR>/maven-repository/io/github/spockz/example/testview/test-view-library/1.0.0/test-view-library-1.0.0.jar -> <PROJECT_ROOT>/examples/example-test-view-app/target/elided-artifacts/.generations/<TRIM_GENERATION>/io.github.spockz.example.testview-test-view-library-1.0.0-trimmed.jar
+[INFO] Test-only added classes: 4 in 2 artifacts
+[INFO]   - Identity[groupId=io.github.spockz.example.testview, artifactId=test-only-library, version=1.0.0, type=jar, classifier=, scope=compile]: [io/github/spockz/example/testview/marker/Marker]
+[INFO]   - Identity[groupId=io.github.spockz.example.testview, artifactId=test-view-library, version=1.0.0, type=jar, classifier=, scope=compile]: [io/github/spockz/example/testview/library/Builder, io/github/spockz/example/testview/library/Helper, io/github/spockz/example/testview/library/Unused]
+[INFO] Test-only additions JAR: <PROJECT_ROOT>/examples/example-test-view-app/target/elider/test-additions.jar
+[INFO] Conservative test-only fallback: true
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:report-test-view-app -->
+
 Closed-world class liveness is opt-in with `-Delide.closedWorld=true` or `<closedWorld>true</closedWorld>`.
 Each configured evidence file must contain a class observation that matches project output or a
 resolved dependency; a valid file does not make an empty, malformed, or irrelevant sibling file
@@ -189,6 +295,7 @@ under the policy identity.
 The `elide` goal writes two structured JSON records:
 
 * `target/dependency-elider-report.json` (`-Delide.summaryFile`): Persisted snapshot consumed by `dependency-elider:report`.
+* `target/elider/test-view-report.json` (`-Delide.testViewReportFile`): Separate test-view observation when test preparation runs. It records original-versus-effective test inputs, added classes, and the binding to the production snapshot. Missing or stale test observations are reported as unavailable.
 
 The persisted Elide summary records ban outcomes in `appliedBans`. Its `rawDroppedCoordinates` metric excludes policy-forced absences, while total absent-artifact metrics include them.
 
@@ -511,7 +618,7 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
-[INFO] Analyzed runtime releases: [21]
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
 [INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
@@ -642,6 +749,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) {nodeId=n1} [EFFECTIVE_DROP]
 [INFO]   ... 11 dependency graph rows elided (sha256:e754b43488489549d3eab2e2e91208c166dd926a768beac0264d5e09942a7a7e)
+[INFO] Test view: unavailable: no saved test preparation
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -684,7 +792,7 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
-[INFO] Analyzed runtime releases: [21]
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
 [INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
@@ -2354,6 +2462,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.luben:zstd-jni:jar:1.5.7-18 (runtime) {nodeId=n6} [EFFECTIVE_DROP]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n9} [RETAINED, CLASS_TRIMMED]
 [INFO]   ... 112 dependency graph rows elided (sha256:08ac720361a029cfccaeef325fee89afb43d221182e3a5ade87648254fca1d41)
+[INFO] Test view: unavailable: no saved test preparation
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -2390,7 +2499,7 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
-[INFO] Analyzed runtime releases: [21]
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
 [INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
@@ -3161,6 +3270,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 [INFO]   ... 24 dependency graph rows elided (sha256:c244800e70bf8895abe523a5be65f054741a2b7f5ff21c8924ec401f79ac1973)
+[INFO] Test view: unavailable: no saved test preparation
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -3197,7 +3307,7 @@ Process exit status: 0
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
-[INFO] Analyzed runtime releases: [21]
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
 [INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
@@ -3456,6 +3566,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n1} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) {nodeId=n3} [RETAINED]
 [INFO]   ... 17 dependency graph rows elided (sha256:f0bea8653ca4e1b295c4019add6825462b22699991afed07c449d7c86c161fdf)
+[INFO] Test view: unavailable: no saved test preparation
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -3508,7 +3619,7 @@ Process exit status: 0
 [INFO] Snapshot: analysis prediction at <TIMESTAMP>
 [INFO] Analysis target JDK release: 21
 [INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
-[INFO] Analyzed runtime releases: [21]
+[INFO] Analyzed runtime releases: [<RUNTIME_RELEASE>]
 [INFO] Runtime input <RUNTIME_IMAGE>: Java <RUNTIME_VERSION> (<RUNTIME_IDENTITY>)
 [INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
@@ -3656,6 +3767,7 @@ Process exit status: 0
 [INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
 [INFO]   Analysis report: <PROJECT_ROOT>/examples/example-basic-app/target/dependency-elider-analysis-report.json
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
+[INFO]   Test view: unavailable: tests were not compiled during analyze
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>

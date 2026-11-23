@@ -43,7 +43,7 @@ main() {
     javac="$java_home/bin/javac"
     jar="$java_home/bin/jar"
   else
-    echo "JAVA_HOME must point to a supported JDK; full verification currently targets GraalVM JDK 21" >&2
+    echo "JAVA_HOME must point to a supported JDK 21 or newer" >&2
     exit 2
   fi
   if [[ ! -x $maven || ! -x $java || ! -x $javac || ! -x $jar ]] || ! command -v timeout >/dev/null; then
@@ -52,6 +52,8 @@ main() {
   fi
 
   read -r -a maven_options <<<"$maven_args"
+  # Cache replay can skip the Elider goals whose execution this harness verifies.
+  maven_options+=(-Dmaven.build.cache.enabled=false)
   maven_options_without_threads=()
   skip_thread_count=false
   for option in "${maven_options[@]}"; do
@@ -90,7 +92,7 @@ main() {
   trap cleanup EXIT
 
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
-    -pl dependency-elider-maven-plugin -am install -DskipTests -Djacoco.skip=true
+    -pl dependency-elider-maven-plugin,examples -am install -DskipTests -Djacoco.skip=true
 
   "$maven" "${maven_options[@]}" -f \
     "$repo_root/examples/logback-vulnerability-mapping-catalog/pom.xml" install -DskipTests
@@ -102,7 +104,11 @@ main() {
   run_fixture_maven() {
     local fixture_dir=$1
     shift
-    (cd -- "$fixture_dir" && "$maven" "${maven_options[@]}" "$@")
+    if [[ $fixture_dir == "$repo_root/examples/example-test-view-app" ]]; then
+      (cd -- "$fixture_dir" && env -u MAVEN_ARGS "$maven" "${maven_options_without_threads[@]}" "$@")
+    else
+      (cd -- "$fixture_dir" && "$maven" "${maven_options[@]}" "$@")
+    fi
   }
 
   run_reactor_maven() {
@@ -169,12 +175,14 @@ MANIFEST
     fixture_names=()
   else
     build_mrjar_fixture
+    install_test_view_libraries
     fixture_names=(
       example-basic-app
       example-spring-boot-app
       example-cve-unused-app
       example-cve-safe-class-app
       example-mrjar-app
+      example-test-view-app
       example-forbidden-code-app
     )
   fi
@@ -226,6 +234,12 @@ MANIFEST
       )
     elif [[ $fixture == example-mrjar-app ]]; then
       archive_file="$mrjar_fixture_jar"
+    elif [[ $fixture == example-test-view-app ]]; then
+      elision_options+=(
+        -Delide.trimJars=true
+        -Delide.testCompilationView=true
+        -Dmaven.compiler.proc=none
+      )
     else
       elision_options+=(
         -Delide.trimJars=true
@@ -314,6 +328,26 @@ MANIFEST
       fi
     fi
 
+    if [[ $fixture == example-test-view-app ]]; then
+      local missing_builder_log="$test_dir/$fixture-without-test-view.out"
+      if run_fixture_maven "$fixture_dir" -f "$pom" clean test \
+        --offline -Delide.mode=elision \
+        "-Delide.cveCacheDirectory=$vulnerability_cache" \
+        "-Delide.traceFiles=$trace" \
+        -Delide.trimJars=true -Dmaven.compiler.proc=none \
+        >"$missing_builder_log" 2>&1; then
+        echo "Test-view example unexpectedly compiled against trimmed production dependencies" >&2
+        exit 1
+      fi
+      if ! rg -Fq 'cannot find symbol' "$missing_builder_log" \
+        || ! rg -Fq 'Builder' "$missing_builder_log"; then
+        echo "Test-view baseline failed for a reason other than missing Builder" >&2
+        cat -- "$missing_builder_log" >&2
+        exit 1
+      fi
+      printf 'Without the test view, the example test compiler cannot resolve Builder.\n'
+    fi
+
     run_timed "$elision_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify "${elision_options[@]}"
 
     if [[ $fixture == example-mrjar-app ]]; then
@@ -375,6 +409,9 @@ MANIFEST
         "$report_output"
     fi
     verify_archive "$fixture" "$entries" "$fixture_dir"
+    if [[ $fixture == example-test-view-app ]]; then
+      verify_test_view_example "$fixture_dir" "$report_output"
+    fi
     if [[ $fixture == example-spring-boot-app ]]; then
       compare_spring_mail_artifacts "$jar_file" "$mail_artifacts"
     fi
@@ -416,6 +453,43 @@ MANIFEST
   else
     echo "Example elision lifecycle checks passed for ${#fixture_names[@]} standalone fixtures and the multi-module reactor."
   fi
+}
+
+install_test_view_libraries() {
+  local libraries="$repo_root/examples/example-test-view-app/libraries"
+  "$maven" "${maven_options[@]}" -f "$libraries/test-only-library/pom.xml" \
+    install -DskipTests
+  "$maven" "${maven_options[@]}" -f "$libraries/test-view-library/pom.xml" \
+    install -DskipTests
+}
+
+verify_test_view_example() {
+  local fixture_dir=$1
+  local report_output=$2
+  local target="$fixture_dir/target"
+  local addition="$target/elider/test-additions.jar"
+  local addition_entries="$test_dir/example-test-view-app-addition.entries"
+  local shade_inputs="$target/dependency-elider-shade-inputs.txt"
+  test -f "$addition"
+  test -f "$shade_inputs"
+  "$jar" tf "$addition" >"$addition_entries"
+  has_entry "$addition_entries" 'io/github/spockz/example/testview/library/Builder.class'
+  has_entry "$addition_entries" 'io/github/spockz/example/testview/library/Helper.class'
+  has_entry "$addition_entries" 'io/github/spockz/example/testview/marker/Marker.class'
+  lacks_entry "$addition_entries" 'io/github/spockz/example/testview/library/Client.class'
+  has_entry "$addition_entries" 'io/github/spockz/example/testview/library/Unused.class'
+  grep -Fq -- '-trimmed.jar' "$shade_inputs"
+  if grep -Fq -- '/test-only-library/' "$shade_inputs" \
+    || grep -Fq -- 'test-additions.jar' "$shade_inputs"; then
+    echo "Test-only classes entered the production Shade input view: $shade_inputs" >&2
+    exit 1
+  fi
+  grep -Fq -- 'Test view: prepared' "$report_output"
+  grep -Fq -- 'Conservative test-only fallback: true' "$report_output"
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-test-view-report "$target/dependency-elider-report.json" \
+      "$target/elider/test-view-report.json"
+  printf 'Test-view example restored Builder, Helper, Marker, and conservative Unused only to tests.\n'
 }
 
 run_reactor_fixture() {
@@ -1086,6 +1160,13 @@ verify_baseline_archive() {
       has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UpperHelper.class'
       has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UnusedUpperFeature.class'
       ;;
+    example-test-view-app)
+      has_entry "$entries" 'io/github/spockz/example/testview/library/Client.class'
+      has_entry "$entries" 'io/github/spockz/example/testview/library/Builder.class'
+      has_entry "$entries" 'io/github/spockz/example/testview/library/Helper.class'
+      has_entry "$entries" 'io/github/spockz/example/testview/library/Unused.class'
+      has_entry "$entries" 'io/github/spockz/example/testview/marker/Marker.class'
+      ;;
   esac
 }
 
@@ -1104,6 +1185,7 @@ verify_archive() {
       verify_effective_graph_report "$fixture_dir" 0
       verify_no_cve_whole_artifact_drops "$fixture_dir"
       ;;
+    example-test-view-app) verify_effective_graph_report "$fixture_dir" 1 ;;
     *) verify_effective_graph_report "$fixture_dir" ;;
   esac
   case $fixture in
@@ -1155,6 +1237,13 @@ verify_archive() {
       has_entry "$entries" "$upper"
       verify_mrjar_class_bytes "$archive_file" "$baseline" "META-INF/versions/11/$baseline"
       verify_mrjar_class_bytes "$archive_file" "$upper" "$upper"
+      ;;
+    example-test-view-app)
+      has_entry "$entries" 'io/github/spockz/example/testview/library/Client.class'
+      lacks_entry "$entries" 'io/github/spockz/example/testview/library/Builder.class'
+      lacks_entry "$entries" 'io/github/spockz/example/testview/library/Helper.class'
+      lacks_entry "$entries" 'io/github/spockz/example/testview/library/Unused.class'
+      lacks_entry "$entries" 'io/github/spockz/example/testview/marker/Marker.class'
       ;;
   esac
 }
@@ -1307,6 +1396,9 @@ verify_runtime() {
       ;;
     example-mrjar-app)
       test "$(<"$output")" = "upper-tier"
+      ;;
+    example-test-view-app)
+      test "$(<"$output")" = "client-ready"
       ;;
   esac
 }

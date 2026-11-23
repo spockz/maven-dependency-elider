@@ -67,6 +67,22 @@ The trimmer does not analyze only the base classes. It elevates and trims the co
 
 The default `elide` execution runs at `process-classes` and derives production roots from emitted class files. Source-only references do not count as runtime links. Dependencies used only through compile-time-inlined primitive or `String` constants may need to be retained explicitly with `elide.retainedArtifacts`. The legacy `elide.sourceRootsComplete=true` assertion is rejected.
 
+### Why is the test view a separate analysis and report?
+
+Test classes do not exist when production Elide runs at `process-classes`, and their references
+must not become production liveness roots or vulnerability omission evidence. With
+`elide.testCompilationView=true`, the Maven 3 listener temporarily restores allowed originals
+only for test compiler configuration and execution. A later `process-test-classes` goal analyzes
+the compiled tests and creates a class-only runtime addition. The added classes are delivered to
+Surefire after the effective production classpath; production resolver requests and packaging
+remain on the Elide projection. The separate schema-1 test report binds saved test observations
+to the production report SHA-256 and project identity. `report` replays that observation or
+labels it unavailable, while its production evidence and SBOM/VEX stay separate. A strict
+freshness manifest requires a clean rebuild when test inputs change between invocations.
+See [ADR-0016](adr/0016-test-compilation-and-isolated-test-runtime-views.md) and
+[RQ-0017 §15](research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md#15-automatic-test-additions-and-reporting-2026-11-22)
+for the implemented boundary and remaining unsupported cases.
+
 ### What happens when a dependency calls `MethodHandle` or `VarHandle` with a custom descriptor?
 
 The JVM defines these as signature-polymorphic calls. Their call-site descriptor may differ from the declared method descriptor, but every class named by that descriptor must still resolve. The trimmer recognizes only the JVM-defined declarations and adds those descriptor types to closure; bogus names, missing descriptor classes, and unrelated missing members remain errors. See [JVMS §2.9.3](https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-2.html#jvms-2.9.3) and [§5.4.3.3](https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-5.html#jvms-5.4.3.3).

@@ -177,7 +177,12 @@ final class MavenElideExecution {
             ? unboundAnalysis
             : applicationBinding.bindAnalysis(unboundAnalysis);
     final EliderTestViewPlan.Prepared testView =
-        EliderTestViewPlan.prepare(lifecycle.session(), lifecycle.project(), banPlan.requested());
+        EliderTestViewPlan.prepare(
+            lifecycle.session(),
+            lifecycle.project(),
+            banPlan.forcedAbsentAfterResolution(),
+            MavenElisionReportWriter.outputPath(
+                publication.files().summary(), lifecycle.project()));
     MavenElisionOutputPublisher.publish(
         new MavenElisionOutputPublisher.Request(
             lifecycle.project(),

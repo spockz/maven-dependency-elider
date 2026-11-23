@@ -22,10 +22,14 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 /** Chained Maven 3 listener for the opt-in, single-project test compilation view. */
 @SuppressWarnings({
   "PMD.AvoidCatchingGenericException",
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.CognitiveComplexity",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CompareObjectsWithEquals",
   "PMD.CommentRequired",
   "PMD.CyclomaticComplexity",
+  "PMD.LawOfDemeter",
+  "PMD.NPathComplexity",
   "PMD.NullAssignment",
   "PMD.TooManyMethods",
   "PMD.UseConcurrentHashMap"
@@ -43,6 +47,7 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
   private final Map<Artifact, File> productionFiles = new IdentityHashMap<>();
   private EliderTestViewPlan.Plan plan;
   private boolean compilerView;
+  private boolean preparedTestView;
 
   EliderTestViewExecutionListener(final MavenSession session, final ExecutionListener prior) {
     super();
@@ -79,8 +84,17 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
   public void mojoSucceeded(final ExecutionEvent event) {
     if (isGoal(event.getMojoExecution(), COMPILER_PLUGIN, TEST_COMPILE)) {
       restoreProduction();
+      if (event.getProject() == project) {
+        EliderTestCompilationEvidence.complete(session, project, event.getMojoExecution());
+      }
     } else if (isGoal(event.getMojoExecution(), "dependency-elider-maven-plugin", "elide")) {
       captureProduction(event.getProject());
+    } else if (isGoal(
+        event.getMojoExecution(), "dependency-elider-maven-plugin", "prepare-test-view")) {
+      preparedTestView = true;
+    } else if (isGoal(event.getMojoExecution(), "maven-clean-plugin", "clean")
+        && event.getProject() != null) {
+      EliderTestCompilationEvidence.markClean(session, event.getProject());
     }
     if (prior != null) {
       prior.mojoSucceeded(event);
@@ -91,8 +105,12 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
   public void mojoFailed(final ExecutionEvent event) {
     if (isGoal(event.getMojoExecution(), COMPILER_PLUGIN, TEST_COMPILE)) {
       restoreProduction();
+      EliderTestCompilationEvidence.clear(session);
     } else if (isGoal(event.getMojoExecution(), "dependency-elider-maven-plugin", "elide")) {
       clear();
+    } else if (isGoal(
+        event.getMojoExecution(), "dependency-elider-maven-plugin", "prepare-test-view")) {
+      preparedTestView = false;
     }
     if (prior != null) {
       prior.mojoFailed(event);
@@ -103,6 +121,8 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
   public void mojoSkipped(final ExecutionEvent event) {
     if (isGoal(event.getMojoExecution(), COMPILER_PLUGIN, TEST_COMPILE)) {
       restoreProduction();
+      preparedTestView = false;
+      EliderTestCompilationEvidence.clear(session);
     }
     if (prior != null) {
       prior.mojoSkipped(event);
@@ -213,6 +233,7 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
     }
     clear();
     project = current;
+    EliderTestCompilationEvidence.clear(session);
     originals = new LinkedHashSet<>(current.getArtifacts());
     rememberFiles(originals, originalFiles);
   }
@@ -241,6 +262,8 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
     if (compilerView) {
       throw new IllegalStateException("Test compilation view is already active");
     }
+    preparedTestView = false;
+    EliderTestCompilationEvidence.clear(session);
     final Map<EliderTestViewPlan.Identity, Artifact> available = new LinkedHashMap<>();
     for (final Artifact artifact : originals) {
       final EliderTestViewPlan.Identity identity = EliderTestViewPlan.Identity.of(artifact);
@@ -281,15 +304,42 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
   }
 
   private void addTestRuntimeJar(final MavenProject current, final MojoExecution execution) {
-    if (current != project || plan == null || plan.addition().isBlank()) {
+    if (current != project || plan == null) {
       return;
     }
     if (compilerView) {
       throw new IllegalStateException("Surefire cannot start during the test compiler view");
     }
-    final Path addition = Path.of(plan.addition());
+    final boolean supplied = !plan.addition().isBlank();
+    final String skipCompilation =
+        session
+            .getUserProperties()
+            .getProperty("maven.test.skip", current.getProperties().getProperty("maven.test.skip"));
+    if (!supplied && "true".equalsIgnoreCase(skipCompilation)) {
+      return;
+    }
+    if (!supplied && !preparedTestView) {
+      throw new IllegalStateException(
+          "Automatic test additions require process-test-classes after successful test"
+              + " compilation");
+    }
+    final Path addition;
+    if (supplied) {
+      addition = Path.of(plan.addition());
+    } else {
+      final java.util.Optional<Path> prepared =
+          EliderTestCompilationEvidence.expectedAddition(session, current);
+      if (prepared.isEmpty()) {
+        return;
+      }
+      addition = prepared.orElseThrow();
+    }
     if (!Files.isRegularFile(addition)) {
-      throw new IllegalStateException("Test additions JAR is missing: " + addition);
+      throw new IllegalStateException(
+          (supplied
+                  ? "Test additions JAR is missing: "
+                  : "Prepared test additions JAR disappeared: ")
+              + addition);
     }
     final Xpp3Dom previous = execution.getConfiguration();
     final Xpp3Dom configuration =
@@ -325,9 +375,11 @@ final class EliderTestViewExecutionListener extends AbstractExecutionListener {
     production = null;
     plan = null;
     compilerView = false;
+    preparedTestView = false;
     originalFiles.clear();
     productionFiles.clear();
     EliderTestViewPlan.clear(session);
+    EliderTestCompilationEvidence.clear(session);
   }
 
   private static void rememberFiles(

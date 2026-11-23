@@ -47,6 +47,8 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
@@ -64,6 +66,8 @@ import org.objectweb.asm.Opcodes;
   "PMD.CyclomaticComplexity",
   "PMD.ExcessiveImports",
   "PMD.GodClass",
+  "PMD.LawOfDemeter",
+  "PMD.NcssCount",
   "PMD.TooManyMethods",
   "PMD.UseConcurrentHashMap"
 })
@@ -98,6 +102,7 @@ final class DependencyContextLifecycleIT {
   private static final String LIFECYCLE_POST_ELIDE_VIEW = "target/lifecycle-elide/post-elide.tsv";
   private static final String ANALYZE_RUN_GOAL = "dependency-elider:analyze@run-elider";
   private static final String ELIDE_RUN_GOAL = "dependency-elider:elide@run-elider";
+  private static final String PREPARE_TEST_VIEW_GOAL = "dependency-elider:prepare-test-view";
   private static final String POST_ELIDE_PROBE_GOAL = "lifecycle-probe:post-elide-probe";
   private static final String RESOLVED_ARTIFACT_ROW_PREFIX = "artifact\tRESOLVED\t";
 
@@ -1799,16 +1804,22 @@ final class DependencyContextLifecycleIT {
             wrapper,
             settings,
             localRepository,
-            evidenceDirectory.resolve("no-overlay.log"),
+            evidenceDirectory.resolve("direct-without-preparation.log"),
             PROCESS_TIMEOUT,
             SEED_PLAN_DISABLED,
             "-Delide.testCompilationView=true",
             "-Dadr0016.userClasspathJar=" + userAddition,
             CLEAN_GOAL,
-            "test");
+            PROCESS_CLASSES_PHASE,
+            "compiler:testCompile",
+            "surefire:test");
     assertAll(
-        "test compilation succeeds and omitting runtime additions fails in Surefire",
-        () -> assertThat(noOverlay).contains("Tests run: 1", "NoClassDefFoundError", "Builder"),
+        "direct Surefire requires current-invocation test preparation",
+        () ->
+            assertThat(noOverlay)
+                .contains(
+                    "Automatic test additions require process-test-classes after successful test"
+                        + " compilation"),
         () -> assertThat(noOverlay).doesNotContain("COMPILATION ERROR"),
         () ->
             assertThat(noOverlay)
@@ -1935,6 +1946,646 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
+  void realEliderAutomaticallyPreparesTestAdditionsAfterCompilation() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("automatic-test-additions");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path testSource = consumer.resolve("src/test/java/AppTest.java");
+    Files.move(consumer.resolve("src/test/java/app/AppTest.java"), testSource);
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
+    final String output =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final Path addition = consumer.resolve("target/elider/test-additions.jar");
+    final Path packageJar = consumer.resolve("target/test-view-consumer-1.0.0.jar");
+    final JsonNode testViewReport =
+        JSON.readTree(consumer.resolve("target/elider/test-view-report.json").toFile());
+    final Path trimmed = testViewTrimmedJar(consumer);
+    final String coordinate = GROUP_ID + ":test-view-library:1.0.0:jar:";
+    final List<String> resolved =
+        Files.readAllLines(
+            consumer.resolve(
+                "target/test-view-probe/graph-explicit-test-resolved-dependencies.tsv"));
+    assertAll(
+        "compiled test bytecode determines additions without a caller-supplied JAR",
+        () -> assertThat(output).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () -> assertThat(output).contains(DECORATOR_OBSERVATION),
+        () -> assertThat(addition).exists(),
+        () -> assertThat(testViewReport.path("conservativeFallbackUsed").asBoolean()).isTrue(),
+        () ->
+            assertThat(rowsWithPrefix(resolved, "resolved-dependency\t"))
+                .containsExactly(resolvedDependencyRow(coordinate, trimmed, sha256(trimmed))),
+        () ->
+            assertThat(jarEntryNames(addition))
+                .contains(
+                    "io/github/spockz/elider/fixture/testview/Builder.class",
+                    "io/github/spockz/elider/fixture/testview/Helper.class",
+                    "io/github/spockz/elider/fixture/testview/Unused.class",
+                    "io/github/spockz/elider/fixture/testonly/Marker.class")
+                .doesNotContain(
+                    "io/github/spockz/elider/fixture/testview/Client.class",
+                    "fixture/test-view-resource.txt"),
+        () -> assertThat(jarEntryNames(trimmed)).contains("fixture/test-view-resource.txt"),
+        () ->
+            assertThat(jarEntryNames(packageJar))
+                .contains(
+                    "io/github/spockz/elider/fixture/testview/Client.class",
+                    "fixture/test-view-resource.txt")
+                .doesNotContain(
+                    "io/github/spockz/elider/fixture/testview/Builder.class",
+                    "io/github/spockz/elider/fixture/testview/Helper.class",
+                    "io/github/spockz/elider/fixture/testview/Unused.class",
+                    "io/github/spockz/elider/fixture/testonly/Marker.class"));
+
+    final String replay =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("report-replay.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "dependency-elider:report");
+    assertAll(
+        "report replays saved test observations without compiling or resolving them again",
+        () -> assertThat(replay).contains(BUILD_SUCCESS, "Test view: prepared", "Builder"),
+        () -> assertThat(replay).doesNotContain("--- compiler:"));
+
+    final String additionHash = sha256(addition);
+    final String changedRuntime =
+        runExpectingFailure(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("changed-runtime-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            PACKAGE_GOAL);
+    assertAll(
+        "changed embedded runtime resources invalidate the saved test-view fingerprint",
+        () -> assertThat(changedRuntime).contains("main-output", "Run Maven clean test"),
+        () -> assertThat(sha256(addition)).isEqualTo(additionHash),
+        () -> assertThat(consumer.resolve("target/elider/test-view-report.json")).doesNotExist());
+
+    final String staleReplay =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("stale-report-replay.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "dependency-elider:report");
+    assertThat(staleReplay).contains("Test view: unavailable: no saved test preparation");
+
+    final Path pom = consumer.resolve(POM_XML);
+    final String originalPom = Files.readString(pom);
+    final String compilerDeclaration =
+        "<artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>";
+    assertThat(originalPom).contains(compilerDeclaration);
+    Files.writeString(
+        pom,
+        originalPom.replace(
+            compilerDeclaration,
+            "<artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>"
+                + "<configuration><debug>false</debug><compilerArgs><arg>-g:none</arg>"
+                + "</compilerArgs></configuration></plugin>"));
+    final String rebuilt =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("rebuilt-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    assertAll(
+        "a clean rebuild accepts freshly compiled tests without optional debug metadata",
+        () -> assertThat(rebuilt).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () ->
+            assertThat(hasSourceFile(consumer.resolve("target/test-classes/app/AppTest.class")))
+                .isFalse(),
+        () ->
+            assertThat(jarEntryNames(addition))
+                .contains("io/github/spockz/elider/fixture/testview/Builder.class"));
+
+    Files.delete(testSource);
+    final String skippedClean =
+        runExpectingFailure(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("skipped-clean-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Dmaven.clean.skip=true",
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    assertAll(
+        "a skipped clean cannot authorize changed test sources",
+        () ->
+            assertThat(skippedClean)
+                .contains("Clean is skipped.", "sources", "Run Maven clean test"),
+        () -> assertThat(consumer.resolve("target/elider/test-view-report.json")).doesNotExist());
+  }
+
+  @Test
+  void realEliderTestAdditionsPreserveProductionPolicyEvidenceAndPackagedApplication()
+      throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("test-view-production-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    final String originalPom = Files.readString(pom);
+    final String eliderConfiguration = "<trimJars>true</trimJars>";
+    assertThat(originalPom).contains(eliderConfiguration);
+    final String policyMapping =
+        """
+        <vulnerabilityMappings><vulnerabilityMapping>
+          <cveId>CVE-2026-16016</cveId>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>test-view-library</artifactId>
+          <versionRangeSpec>(,)</versionRangeSpec>
+          <assertsAffected>true</assertsAffected>
+          <vulnerableClasses><vulnerableClass>io.github.spockz.elider.fixture.testview.Builder</vulnerableClass></vulnerableClasses>
+          <forbiddenSymbols><symbol>io.github.spockz.elider.fixture.testview.Builder</symbol></forbiddenSymbols>
+        </vulnerabilityMapping></vulnerabilityMappings>
+        """;
+    Files.writeString(
+        pom, originalPom.replace(eliderConfiguration, eliderConfiguration + policyMapping));
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final String skipCompilation =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("skip-compilation-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Dmaven.test.skip=true",
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final Path target = consumer.resolve(TARGET_DIRECTORY);
+    final Path packageJar = target.resolve("test-view-consumer-1.0.0.jar");
+    final JsonNode skippedReport =
+        JSON.readTree(target.resolve("dependency-elider-report.json").toFile());
+    final JsonNode skippedSbom =
+        JSON.readTree(target.resolve("dependency-elider-sbom.cdx.json").toFile());
+    final JsonNode skippedVex =
+        JSON.readTree(target.resolve("dependency-elider.openvex.json").toFile());
+    final List<String> skippedPackageEntries = jarEntryNames(packageJar);
+    assertAll(
+        "the independent production baseline neither compiles tests nor prepares additions",
+        () -> assertThat(skipCompilation).contains(BUILD_SUCCESS),
+        () -> assertThat(target.resolve("test-classes/app/AppTest.class")).doesNotExist(),
+        () -> assertThat(target.resolve("elider/test-additions.jar")).doesNotExist(),
+        () -> assertThat(skippedReport.path("forbiddenCodeAssessments")).hasSize(1),
+        () -> assertThat(skippedVex.path("statements")).hasSize(1));
+
+    final String skipTests =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("skip-tests-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-DskipTests=true",
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final JsonNode skipTestsReport =
+        JSON.readTree(target.resolve("dependency-elider-report.json").toFile());
+    final JsonNode skipTestsSbom =
+        JSON.readTree(target.resolve("dependency-elider-sbom.cdx.json").toFile());
+    final JsonNode skipTestsVex =
+        JSON.readTree(target.resolve("dependency-elider.openvex.json").toFile());
+    assertAll(
+        "skipTests compiles and prepares the test view without changing production evidence",
+        () -> assertThat(skipTests).contains(BUILD_SUCCESS, "Tests are skipped."),
+        () -> assertThat(skipTests).doesNotContain("Running app.AppTest"),
+        () -> assertThat(target.resolve("test-classes/app/AppTest.class")).exists(),
+        () -> assertThat(target.resolve("elider/test-additions.jar")).exists(),
+        () ->
+            assertThat(jarEntryNames(packageJar)).containsExactlyElementsOf(skippedPackageEntries),
+        () ->
+            assertThat(skipTestsReport.path("forbiddenCodeAssessments"))
+                .isEqualTo(skippedReport.path("forbiddenCodeAssessments")),
+        () ->
+            assertThat(skipTestsSbom.path("components")).isEqualTo(skippedSbom.path("components")),
+        () ->
+            assertThat(skipTestsSbom.path("dependencies"))
+                .isEqualTo(skippedSbom.path("dependencies")),
+        () -> assertThat(skipTestsVex.path("statements")).isEqualTo(skippedVex.path("statements")));
+
+    final String runningTests =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("running-tests-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final JsonNode runningReport =
+        JSON.readTree(target.resolve("dependency-elider-report.json").toFile());
+    final JsonNode runningSbom =
+        JSON.readTree(target.resolve("dependency-elider-sbom.cdx.json").toFile());
+    final JsonNode runningVex =
+        JSON.readTree(target.resolve("dependency-elider.openvex.json").toFile());
+    final Path smokeLog = evidenceDirectory.resolve("packaged-application-smoke.log");
+    final Process smoke =
+        new ProcessBuilder(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp",
+                packageJar.toString(),
+                "app.App")
+            .redirectErrorStream(true)
+            .redirectOutput(smokeLog.toFile())
+            .start();
+    final boolean smokeExited = smoke.waitFor(PROCESS_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+    if (!smokeExited) {
+      terminate(smoke);
+    }
+    assertAll(
+        "test additions leave production policy, inventory and packaged runtime unchanged",
+        () -> assertThat(runningTests).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () -> assertThat(target.resolve("elider/test-additions.jar")).exists(),
+        () ->
+            assertThat(runningReport.path("forbiddenCodeAssessments"))
+                .isEqualTo(skippedReport.path("forbiddenCodeAssessments")),
+        () ->
+            assertThat(
+                    runningReport
+                        .path("forbiddenCodeAssessments")
+                        .get(0)
+                        .path(STATUS_FIELD)
+                        .asText())
+                .isEqualTo("PASS"),
+        () -> assertThat(runningSbom.path("components")).isEqualTo(skippedSbom.path("components")),
+        () ->
+            assertThat(runningSbom.path("dependencies"))
+                .isEqualTo(skippedSbom.path("dependencies")),
+        () -> assertThat(runningVex.path("statements")).isEqualTo(skippedVex.path("statements")),
+        () -> assertThat(runningVex.path("statements").toString()).contains("CVE-2026-16016"),
+        () ->
+            assertThat(jarEntryNames(packageJar)).containsExactlyElementsOf(skippedPackageEntries),
+        () -> assertThat(smokeExited).isTrue(),
+        () -> assertThat(smoke.exitValue()).isZero(),
+        () -> assertThat(Files.readString(smokeLog)).isEqualTo("client" + System.lineSeparator()));
+  }
+
+  @Test
+  void realEliderTestViewCannotWaivePreconditionSkipTestsGuard() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("test-view-precondition-guard");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    final String originalPom = Files.readString(pom);
+    assertThat(originalPom).contains("<trimJars>true</trimJars>");
+    Files.writeString(
+        pom,
+        originalPom.replace(
+            "<trimJars>true</trimJars>",
+            """
+            <trimJars>true</trimJars>
+            <preconditionClassPathComplete>true</preconditionClassPathComplete>
+            <vulnerabilityMappings><vulnerabilityMapping>
+              <cveId>CVE-2026-16017</cveId>
+              <groupId>io.github.spockz.elider.test</groupId>
+              <artifactId>test-view-library</artifactId>
+              <versionRangeSpec>(,)</versionRangeSpec>
+              <assertsAffected>true</assertsAffected>
+                  <requiresDependency>io.github.spockz.elider.test:test-only-library</requiresDependency>
+              <requiresClass>missing.Prerequisite</requiresClass>
+            </vulnerabilityMapping></vulnerabilityMappings>
+            """));
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
+    final String output =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("precondition-guard.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final Path target = consumer.resolve(TARGET_DIRECTORY);
+    final JsonNode report = JSON.readTree(target.resolve("dependency-elider-report.json").toFile());
+    final Path vex = target.resolve("dependency-elider.openvex.json");
+    assertAll(
+        "running tests cannot satisfy the existing precondition proof skip requirement",
+        () -> assertThat(output).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () -> assertThat(target.resolve("elider/test-additions.jar")).exists(),
+        () -> assertThat(report.path("genericFindings").toString()).contains("CVE-2026-16017"),
+        () -> assertThat(report.path("genericFindings").toString()).contains("skipTests=true"),
+        () ->
+            assertThat(Files.exists(vex) ? Files.readString(vex) : "")
+                .doesNotContain("CVE-2026-16017"));
+  }
+
+  @Test
+  void realEliderAutomaticallyPreparesReactorLeafTestView() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("reactor-leaf-test-view");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path consumerPom = consumer.resolve(POM_XML);
+    final String consumerPomContents = Files.readString(consumerPom);
+    assertThat(consumerPomContents).contains("<maven.compiler.release>21</maven.compiler.release>");
+    Files.writeString(
+        consumerPom,
+        consumerPomContents.replace(
+            "<maven.compiler.release>21</maven.compiler.release>",
+            "<maven.compiler.release>21</maven.compiler.release>"
+                + "<elide.testCompilationView>true</elide.testCompilationView>"));
+    Files.writeString(
+        fixtureRoot.resolve(POM_XML),
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Builds original provider modules and the elided consumer in one reactor. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId><artifactId>test-view-reactor</artifactId><version>1.0.0</version>
+          <packaging>pom</packaging>
+          <modules>
+            <module>libraries/test-view-library</module>
+            <module>libraries/test-only-library</module>
+            <module>consumer-test-view</module>
+          </modules>
+        </project>
+        """);
+    writeTestViewExtensions(
+        Files.createDirectories(fixtureRoot.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML));
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
+    final String output =
+        runFromDirectory(
+            fixtureRoot,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("reactor-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-pl",
+            CONSUMER_TEST_VIEW,
+            "-am",
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final Path additions = consumer.resolve("target/elider/test-additions.jar");
+    final Path packaged = consumer.resolve("target/test-view-consumer-1.0.0.jar");
+    final Path upstream =
+        fixtureRoot.resolve("libraries/test-view-library/target/test-view-library-1.0.0.jar");
+    assertAll(
+        "a reactor leaf runs tests with additions while upstream and packaging stay original",
+        () -> assertThat(output).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () ->
+            assertThat(jarEntryNames(additions))
+                .contains("io/github/spockz/elider/fixture/testview/Builder.class"),
+        () ->
+            assertThat(jarEntryNames(upstream))
+                .contains("io/github/spockz/elider/fixture/testview/Builder.class"),
+        () ->
+            assertThat(jarEntryNames(packaged))
+                .contains("io/github/spockz/elider/fixture/testview/Client.class")
+                .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
+    final String parallel =
+        runExpectingFailure(
+            fixtureRoot,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("parallel-reactor-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Dmaven.build.cache.enabled=false",
+            "-T2",
+            "-pl",
+            CONSUMER_TEST_VIEW,
+            "-am",
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    assertThat(parallel).contains("does not support a parallel Maven reactor");
+  }
+
+  @Test
+  void realEliderAutomaticallyPreparesProcessorGeneratedTestClass() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("processor-generated-test-view");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    final String originalPom = Files.readString(pom);
+    final String compilerPlugin =
+        "<artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>";
+    assertThat(originalPom).contains(compilerPlugin, "<dependencies>");
+    final String processorConfiguration =
+        """
+        <configuration><proc>full</proc><annotationProcessorPaths><path>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>test-view-processor-library</artifactId>
+          <version>1.0.0</version>
+        </path></annotationProcessorPaths></configuration>
+        """;
+    Files.writeString(
+        pom,
+        originalPom
+            .replace(
+                "<dependencies>",
+                """
+                <dependencies><dependency>
+                  <groupId>io.github.spockz.elider.test</groupId>
+                  <artifactId>test-view-processor-library</artifactId>
+                  <version>1.0.0</version><scope>test</scope>
+                </dependency>
+                """)
+            .replace(compilerPlugin, compilerPlugin + processorConfiguration));
+    final Path trigger = consumer.resolve("src/test/java/app/ProcessorTrigger.java");
+    Files.writeString(
+        trigger,
+        """
+        /* WHY: Makes the ordinary test compiler generate a dependency-using JUnit test. */
+        package app;
+        import io.github.spockz.elider.fixture.testview.GenerateTestCase;
+        @GenerateTestCase final class ProcessorTrigger {}
+        """);
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
+    final String output =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("processor-package.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            PACKAGE_GOAL);
+    final Path target = consumer.resolve(TARGET_DIRECTORY);
+    final Path generatedSource =
+        target.resolve("generated-test-sources/test-annotations/app/GeneratedProcessorTest.java");
+    final Path generatedClass = target.resolve("test-classes/app/GeneratedProcessorTest.class");
+    final Path additions = target.resolve("elider/test-additions.jar");
+    final Path packaged = target.resolve("test-view-consumer-1.0.0.jar");
+    assertAll(
+        "ordinary test annotation processing contributes compiled roots without packaging them",
+        () -> assertThat(output).contains(BUILD_SUCCESS, "Tests run: 2, Failures: 0"),
+        () -> assertThat(generatedSource).exists(),
+        () -> assertThat(generatedClass).exists(),
+        () ->
+            assertThat(jarEntryNames(additions))
+                .contains(
+                    "io/github/spockz/elider/fixture/testview/Builder.class",
+                    "io/github/spockz/elider/fixture/testview/Helper.class"),
+        () ->
+            assertThat(jarEntryNames(packaged))
+                .contains("io/github/spockz/elider/fixture/testview/Client.class")
+                .doesNotContain(
+                    "app/GeneratedProcessorTest.class",
+                    "io/github/spockz/elider/fixture/testview/Builder.class"));
+  }
+
+  @Test
+  void realEliderPreservesTwoConfiguredSurefireExecutions() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("two-surefire-executions");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
+    configureTestViewConsumer(consumer);
+    final Path global = evidenceDirectory.resolve("global-classpath.jar");
+    final Path first = evidenceDirectory.resolve("first-classpath.jar");
+    final Path second = evidenceDirectory.resolve("second-classpath.jar");
+    writeUserClasspathJar(global);
+    writeUserClasspathJar(first, "first-marker.txt");
+    writeUserClasspathJar(second, "second-marker.txt");
+    final Path pom = consumer.resolve("pom.xml");
+    final String marker =
+        "</configuration></plugin>\n"
+            + "        <plugin><groupId>org.apache.maven.plugins</groupId>"
+            + "<artifactId>maven-shade-plugin";
+    final String executions =
+        "<executions>"
+            + "<execution><id>first</id><goals><goal>test</goal></goals><configuration>"
+            + "<systemPropertyVariables><adr0016.executionMarker>first-marker.txt"
+            + "</adr0016.executionMarker></systemPropertyVariables>"
+            + "<additionalClasspathElements><additionalClasspathElement>"
+            + "${adr0016.firstClasspathJar}</additionalClasspathElement>"
+            + "</additionalClasspathElements></configuration></execution>"
+            + "<execution><id>second</id><goals><goal>test</goal></goals><configuration>"
+            + "<systemPropertyVariables><adr0016.executionMarker>second-marker.txt"
+            + "</adr0016.executionMarker></systemPropertyVariables>"
+            + "<additionalClasspathElements><additionalClasspathElement>"
+            + "${adr0016.secondClasspathJar}</additionalClasspathElement>"
+            + "</additionalClasspathElements></configuration></execution>"
+            + "</executions>";
+    final String originalPom = Files.readString(pom);
+    assertThat(originalPom).contains(marker);
+    Files.writeString(
+        pom,
+        originalPom.replace(
+            marker,
+            "</configuration>"
+                + executions
+                + "</plugin>\n"
+                + "       "
+                + " <plugin><groupId>org.apache.maven.plugins</groupId>"
+                + "<artifactId>maven-shade-plugin"));
+    final String output =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("two-executions.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + global,
+            "-Dadr0016.firstClasspathJar=" + first,
+            "-Dadr0016.secondClasspathJar=" + second,
+            CLEAN_GOAL,
+            "process-test-classes",
+            "surefire:test@first",
+            "surefire:test@second");
+    assertAll(
+        "each configured Surefire execution receives additions and its own user classpath entry",
+        () -> assertThat(output).contains(BUILD_SUCCESS, "(first) @", "(second) @"),
+        () -> assertThat(output.split("Running app.AppTest", -1)).hasSize(3),
+        () -> assertThat(consumer.resolve("target/elider/test-additions.jar")).exists());
+  }
+
+  @Test
   void realEliderListenerHandlesFailedCompilerPartialDirectAndSkippedLifecycles() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
@@ -2030,6 +2681,56 @@ final class DependencyContextLifecycleIT {
                 .containsExactly(
                     resolvedDependencyRow(coordinate, directTrimmed, sha256(directTrimmed))));
 
+    final String automaticDirect =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("automatic-direct-goals.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            "-Dlifecycle.reportDirectory=" + consumer.resolve("target/automatic-direct-probe"),
+            "-Dlifecycle.resolutionScope=COMPILE",
+            CLEAN_GOAL,
+            PROCESS_CLASSES_PHASE,
+            "compiler:testCompile",
+            PREPARE_TEST_VIEW_GOAL,
+            "surefire:test",
+            POST_ELIDE_PROBE_GOAL);
+    assertAll(
+        "direct goals support an explicit preparation after the current test compiler",
+        () -> assertThat(automaticDirect).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () -> assertThat(automaticDirect).contains(DECORATOR_OBSERVATION),
+        () -> assertThat(consumer.resolve("target/elider/test-additions.jar")).exists());
+
+    final String repeatedCompiler =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("repeated-compiler-without-preparation.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            CLEAN_GOAL,
+            PROCESS_CLASSES_PHASE,
+            "compiler:testCompile",
+            PREPARE_TEST_VIEW_GOAL,
+            "compiler:testCompile",
+            "surefire:test");
+    assertAll(
+        "a second compiler invalidates the previously prepared test runtime",
+        () ->
+            assertThat(repeatedCompiler)
+                .contains(
+                    "Automatic test additions require process-test-classes after successful test"
+                        + " compilation"),
+        () -> assertThat(repeatedCompiler).doesNotContain("BUILD SUCCESS"));
+
     final String skipTests =
         runFromDirectory(
             consumer,
@@ -2058,6 +2759,26 @@ final class DependencyContextLifecycleIT {
             assertThat(jarEntryNames(consumer.resolve("target/test-view-consumer-1.0.0.jar")))
                 .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
 
+    final Path testSource = consumer.resolve("src/test/java/app/AppTest.java");
+    final String testSourceContents = Files.readString(testSource);
+    Files.delete(testSource);
+    final String stale =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("stale-test-output.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            PACKAGE_GOAL);
+    assertAll(
+        "old test bytecode cannot authorize additions after its source is removed",
+        () -> assertThat(stale).contains("Test-view inputs changed in sources"),
+        () -> assertThat(stale).doesNotContain("BUILD SUCCESS"));
+    Files.writeString(testSource, testSourceContents);
+
     final String skipCompilation =
         runFromDirectory(
             consumer,
@@ -2082,7 +2803,7 @@ final class DependencyContextLifecycleIT {
             assertThat(jarEntryNames(consumer.resolve("target/test-view-consumer-1.0.0.jar")))
                 .doesNotContain("io/github/spockz/elider/fixture/testview/Builder.class"));
 
-    Files.delete(consumer.resolve("src/test/java/app/AppTest.java"));
+    Files.delete(testSource);
     final String noSources =
         runFromDirectory(
             consumer,
@@ -2105,7 +2826,7 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
-  void productionTestViewRejectsMissingElideAndUnprovenBanInputs() throws Exception {
+  void productionTestViewRejectsMissingElideAndBannedTestInputs() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
     final Path evidenceDirectory = temporaryDirectory.resolve("test-view-unsupported");
@@ -2115,6 +2836,14 @@ final class DependencyContextLifecycleIT {
     final Path consumer = fixtureRoot.resolve(CONSUMER_TEST_VIEW);
     configureTestViewConsumer(consumer);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path addition = evidenceDirectory.resolve("test-additions.jar");
+    writeTestAdditions(
+        repositoryArtifact(localRepository, "test-view-library"),
+        repositoryArtifact(localRepository, "test-only-library"),
+        addition,
+        true);
+    final Path userAddition = evidenceDirectory.resolve("user-addition.jar");
+    writeUserClasspathJar(userAddition);
 
     final String direct =
         runExpectingFailure(
@@ -2142,24 +2871,48 @@ final class DependencyContextLifecycleIT {
                 "<trimJars>true</trimJars><banishedDependencies>"
                     + "org.example:unreachable"
                     + "</banishedDependencies>"));
+    final String unmatched =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("unmatched-ban.log"),
+            PROCESS_TIMEOUT,
+            SEED_PLAN_DISABLED,
+            "-Delide.testCompilationView=true",
+            "-Delide.testAdditionsJar=" + addition,
+            "-Dadr0016.userClasspathJar=" + userAddition,
+            CLEAN_GOAL,
+            "test");
+    assertAll(
+        "an unmatched ban does not remove allowed mediated test inputs",
+        () -> assertThat(unmatched).contains(BUILD_SUCCESS, "Tests run: 1, Failures: 0"),
+        () -> assertThat(unmatched).contains("Applied ban outcomes:"));
+
+    Files.writeString(
+        pom,
+        Files.readString(pom)
+            .replace("org.example:unreachable", "io.github.spockz.elider.test:test-only-library")
+            .replace(
+                "<artifactId>test-only-library</artifactId><version>1.0.0</version></dependency>",
+                "<artifactId>test-view-bridge-library</artifactId>"
+                    + "<version>1.0.0</version></dependency>"));
     final String banned =
         runExpectingFailure(
             consumer,
             wrapper,
             settings,
             localRepository,
-            evidenceDirectory.resolve("ban-not-allowed.log"),
+            evidenceDirectory.resolve("banned-test-input.log"),
             PROCESS_TIMEOUT,
             SEED_PLAN_DISABLED,
             "-Delide.testCompilationView=true",
             CLEAN_GOAL,
             "test");
     assertAll(
-        "the opt-in view refuses a ban policy until post-ban inputs are proven",
-        () ->
-            assertThat(banned)
-                .contains(
-                    "Test compilation view with elide.banishedDependencies is not yet supported"),
+        "a forced-absent artifact is unavailable to test compilation",
+        () -> assertThat(banned).contains("testCompile", "Marker", "cannot find symbol"),
         () -> assertThat(banned).doesNotContain("BUILD SUCCESS"));
   }
 
@@ -3258,9 +4011,28 @@ final class DependencyContextLifecycleIT {
         Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML));
   }
 
+  private static boolean hasSourceFile(final Path classFile) throws IOException {
+    final boolean[] present = new boolean[1];
+    new ClassReader(Files.readAllBytes(classFile))
+        .accept(
+            new ClassVisitor(Opcodes.ASM9) {
+              @Override
+              public void visitSource(final String source, final String debug) {
+                present[0] = true;
+              }
+            },
+            ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES);
+    return present[0];
+  }
+
   private static void writeUserClasspathJar(final Path path) throws IOException {
+    writeUserClasspathJar(path, "user-classpath-marker.txt");
+  }
+
+  private static void writeUserClasspathJar(final Path path, final String marker)
+      throws IOException {
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path))) {
-      output.putNextEntry(new JarEntry("user-classpath-marker.txt"));
+      output.putNextEntry(new JarEntry(marker));
       output.write("present".getBytes(StandardCharsets.UTF_8));
       output.closeEntry();
     }
